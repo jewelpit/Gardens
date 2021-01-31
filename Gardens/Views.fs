@@ -27,4 +27,5 @@ let index (gardenManager : Model.GardenManager) =
 let garden (garden : Model.Garden) =
     layout [
         h1 [] [str garden.Name]
+        p [] [str (sprintf "%d ticks old" garden.Ticks)]
     ]
