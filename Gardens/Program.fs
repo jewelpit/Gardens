@@ -2,6 +2,7 @@ module Gardens.App
 
 open System
 open System.IO
+open System.Reflection
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Cors.Infrastructure
 open Microsoft.AspNetCore.Hosting
@@ -66,7 +67,7 @@ let configureLogging (builder : ILoggingBuilder) =
 
 [<EntryPoint>]
 let main args =
-    let contentRoot = Directory.GetCurrentDirectory()
+    let contentRoot = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
     let webRoot = Path.Combine(contentRoot, "WebRoot")
     Host
         .CreateDefaultBuilder(args)

@@ -7,10 +7,13 @@ let layout (content: XmlNode list) =
         head [] [
             title []  [ encodedText "Gardens" ]
             link [
-                _rel  "stylesheet"
+                _rel "stylesheet"
                 _type "text/css"
-                _href "/main.css"
+                _href "/static/main.css"
             ]
+            script [
+                _src "/static/client.js"
+            ] []
         ]
         body [] content
     ]

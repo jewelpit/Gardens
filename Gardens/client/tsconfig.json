@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "noImplicitAny": true,
+        "outFile": "dist/client.js",
+        "strict": true,
+        "sourceMap": true
+    },
+    "include": [
+        "**/*.ts"
+    ]
+}
