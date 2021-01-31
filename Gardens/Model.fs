@@ -12,7 +12,7 @@ type Garden() =
                 return! messageLoop ()
             }
         messageLoop ())
-    let timer = new Timers.Timer(20.0)
+    let timer = new Timers.Timer(50.0)
     do
         timer.Elapsed.Add(fun _ ->
             if mailbox.CurrentQueueLength > 2 then
@@ -42,3 +42,7 @@ type Garden() =
                 |> ignore<Text.StringBuilder>
             sb.Append("\r\n") |> ignore<Text.StringBuilder>
         sb.ToString()
+
+type Update = {
+    Tick : int64
+}

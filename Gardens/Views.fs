@@ -21,7 +21,7 @@ let layout (content: XmlNode list) =
 let index (garden : Model.Garden) =
     layout [
         h1 [] [str "ASCII Garden"]
-        p [] [str (sprintf "%d ticks old" garden.Ticks)]
+        p [_id "age"] [str (sprintf "Age: %d ticks" garden.Ticks)]
         p [] [
             pre [] [str (garden.ToString())]
         ]

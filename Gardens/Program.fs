@@ -10,18 +10,21 @@ open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.DependencyInjection
 
-open FSharp.Control.Tasks.Affine
 open Giraffe
 
 let indexHandler (garden : Model.Garden) =
     let view = Views.index garden
     htmlView view
 
+let getUpdatesHandler (garden : Model.Garden) =
+    Successful.ok (json { Model.Update.Tick = garden.Ticks })
+
 let webApp (garden : Model.Garden) =
     choose [
         GET >=>
             choose [
                 route "/" >=> warbler (fun _ -> indexHandler garden)
+                route "/api/getUpdates" >=> warbler (fun _ -> getUpdatesHandler garden)
             ]
         setStatusCode 404 >=> text "Not Found"
     ]
