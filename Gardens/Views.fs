@@ -15,18 +15,9 @@ let layout (content: XmlNode list) =
         body [] content
     ]
 
-let index (gardenManager : Model.GardenManager) =
+let index (garden : Model.Garden) =
     layout [
-        form [_action "/add_garden"; _method "post"] [
-            input [_type "submit"; _value "Create a new garden!"]
-        ]
-        yield! gardenManager.Gardens
-            |> Seq.map (fun kvp -> p [] [a [_href (sprintf "/garden/%d" kvp.Key)] [str kvp.Value.Name]])
-    ]
-
-let garden (garden : Model.Garden) =
-    layout [
-        h1 [] [str garden.Name]
+        h1 [] [str "ASCII Garden"]
         p [] [str (sprintf "%d ticks old" garden.Ticks)]
         p [] [
             pre [] [str (garden.ToString())]

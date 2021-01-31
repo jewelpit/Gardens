@@ -12,33 +12,15 @@ open Microsoft.Extensions.DependencyInjection
 open FSharp.Control.Tasks.Affine
 open Giraffe
 
-let indexHandler (gardenManager : Model.GardenManager) =
-    let view = Views.index gardenManager
+let indexHandler (garden : Model.Garden) =
+    let view = Views.index garden
     htmlView view
 
-let showGarden (gardenManager : Model.GardenManager) (id : int64) =
-    fun next ctx ->
-        match Map.tryFind id gardenManager.Gardens with
-        | Some garden -> htmlView (Views.garden garden) next ctx
-        | None -> Threading.Tasks.Task.FromResult None
-
-let addGarden (gardenManager : Model.GardenManager) =
-    fun next ctx ->
-        task {
-            do! gardenManager.AddGarden()
-            return! redirectTo false "/" next ctx
-        }
-
-let webApp (gardenManager : Model.GardenManager) =
+let webApp (garden : Model.Garden) =
     choose [
         GET >=>
             choose [
-                route "/" >=> warbler (fun _ -> indexHandler gardenManager)
-                routef "/garden/%d" (fun id -> showGarden gardenManager id)
-            ]
-        POST >=>
-            choose [
-                routex "/add_garden(/)?" >=> addGarden gardenManager
+                route "/" >=> warbler (fun _ -> indexHandler garden)
             ]
         setStatusCode 404 >=> text "Not Found"
     ]
@@ -57,7 +39,7 @@ let configureCors (builder : CorsPolicyBuilder) =
    |> ignore<CorsPolicyBuilder>
 
 let configureApp (app : IApplicationBuilder) =
-    let gardenManager = new Model.GardenManager()
+    let garden = Model.Garden()
     let env = app.ApplicationServices.GetService<IWebHostEnvironment>()
     let appBuilder =
         match env.IsDevelopment() with
@@ -68,7 +50,7 @@ let configureApp (app : IApplicationBuilder) =
     appBuilder
         .UseCors(configureCors)
         .UseStaticFiles()
-        .UseGiraffe(webApp gardenManager)
+        .UseGiraffe(webApp garden)
 
 let configureServices (services : IServiceCollection) =
     services
