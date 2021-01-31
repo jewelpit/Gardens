@@ -19,7 +19,7 @@ let indexHandler (gardenManager : Model.GardenManager) =
 let showGarden (gardenManager : Model.GardenManager) (id : int64) =
     fun next ctx ->
         match Map.tryFind id gardenManager.Gardens with
-        | Some garden ->  htmlView (Views.garden garden) next ctx
+        | Some garden -> htmlView (Views.garden garden) next ctx
         | None -> Threading.Tasks.Task.FromResult None
 
 let addGarden (gardenManager : Model.GardenManager) =

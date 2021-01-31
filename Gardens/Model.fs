@@ -3,7 +3,7 @@ module Gardens.Model
 open System
 open FSharp.Control.Tasks.Affine
 
-type Garden(name) =
+type Garden(name : string) =
     let mutable ticks = 0L
     let mailbox = MailboxProcessor.Start(fun inbox ->
         let rec messageLoop () =
@@ -14,6 +14,16 @@ type Garden(name) =
             }
         messageLoop ())
 
+    let garden =
+        RogueSharp.Map.Create(
+            RogueSharp.MapCreation.CaveMapCreationStrategy(
+                80,
+                50,
+                75,
+                50,
+                500,
+                RogueSharp.Random.DotNetRandom()))
+
     member __.Name = name
     member __.Ticks = ticks
 
@@ -22,6 +32,15 @@ type Garden(name) =
             ()
         else
             mailbox.Post()
+
+    override __.ToString() =
+        let sb = Text.StringBuilder()
+        for y in 0 .. (garden.Height - 1) do
+            for x in 0 .. (garden.Width - 1) do
+                if garden.GetCell(x, y).IsWalkable then sb.Append(" ") else sb.Append("O")
+                |> ignore<Text.StringBuilder>
+            sb.Append("\r\n") |> ignore<Text.StringBuilder>
+        sb.ToString()
 
 
 type GardenManager() =
