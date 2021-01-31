@@ -15,12 +15,16 @@ let layout (content: XmlNode list) =
         body [] content
     ]
 
-let partial () =
-    h1 [] [ encodedText "Gardens" ]
-
-let index (name : string) =
-    [
-        partial()
-        p [] [ encodedText name ]
+let index (gardenManager : Model.GardenManager) =
+    layout [
+        form [_action "/add_garden"; _method "post"] [
+            input [_type "submit"; _value "Create a new garden!"]
+        ]
+        yield! gardenManager.Gardens
+            |> Seq.map (fun kvp -> p [] [a [_href (sprintf "/garden/%d" kvp.Key)] [str kvp.Value.Name]])
     ]
-    |> layout
+
+let garden (garden : Model.Garden) =
+    layout [
+        h1 [] [str garden.Name]
+    ]

@@ -8,38 +8,44 @@ open Microsoft.AspNetCore.Hosting
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.DependencyInjection
+
+open FSharp.Control.Tasks.Affine
 open Giraffe
 
-// ---------------------------------
-// Web app
-// ---------------------------------
-
-let indexHandler (name : string) =
-    let greetings = sprintf "Hello %s, from Giraffe!" name
-    let view = Views.index greetings
+let indexHandler (gardenManager : Model.GardenManager) =
+    let view = Views.index gardenManager
     htmlView view
 
-let webApp =
+let showGarden (gardenManager : Model.GardenManager) (id : int64) =
+    fun next ctx ->
+        match Map.tryFind id gardenManager.Gardens with
+        | Some garden ->  htmlView (Views.garden garden) next ctx
+        | None -> Threading.Tasks.Task.FromResult None
+
+let addGarden (gardenManager : Model.GardenManager) =
+    fun next ctx ->
+        task {
+            do! gardenManager.AddGarden()
+            return! redirectTo false "/" next ctx
+        }
+
+let webApp (gardenManager : Model.GardenManager) =
     choose [
         GET >=>
             choose [
-                route "/" >=> indexHandler "world"
-                routef "/hello/%s" indexHandler
+                route "/" >=> warbler (fun _ -> indexHandler gardenManager)
+                routef "/garden/%d" (fun id -> showGarden gardenManager id)
+            ]
+        POST >=>
+            choose [
+                routex "/add_garden(/)?" >=> addGarden gardenManager
             ]
         setStatusCode 404 >=> text "Not Found"
     ]
 
-// ---------------------------------
-// Error handler
-// ---------------------------------
-
 let errorHandler (ex : Exception) (logger : ILogger) =
     logger.LogError(ex, "An unhandled exception has occurred while executing the request.")
     clearResponse >=> setStatusCode 500 >=> text ex.Message
-
-// ---------------------------------
-// Config and Main
-// ---------------------------------
 
 let configureCors (builder : CorsPolicyBuilder) =
     builder
@@ -51,6 +57,7 @@ let configureCors (builder : CorsPolicyBuilder) =
    |> ignore<CorsPolicyBuilder>
 
 let configureApp (app : IApplicationBuilder) =
+    let gardenManager = new Model.GardenManager()
     let env = app.ApplicationServices.GetService<IWebHostEnvironment>()
     let appBuilder =
         match env.IsDevelopment() with
@@ -61,7 +68,7 @@ let configureApp (app : IApplicationBuilder) =
     appBuilder
         .UseCors(configureCors)
         .UseStaticFiles()
-        .UseGiraffe(webApp)
+        .UseGiraffe(webApp gardenManager)
 
 let configureServices (services : IServiceCollection) =
     services
