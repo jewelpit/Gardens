@@ -26,7 +26,7 @@ let index (garden : Model.Garden) =
             h1 [] [str "ASCII Garden"]
             p [_id "age"] [str (sprintf "Age: %d ticks" ticks)]
             p [] [
-                pre [] [str (garden.ToString())]
+                pre [_id "garden"] [str (garden.ToString())]
             ]
         ]
     }

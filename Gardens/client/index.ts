@@ -3,7 +3,10 @@ class ClientApp {
   failures: number;
   handler: number | undefined;
 
-  constructor(readonly ticksDiv: () => HTMLElement) {
+  constructor(
+    readonly ticksDiv: () => HTMLElement,
+    readonly gardenDiv: () => HTMLElement
+  ) {
     this.tick = 0;
     this.failures = 0;
   }
@@ -15,6 +18,13 @@ class ClientApp {
         clearInterval(this.handler);
         document.body.setAttribute("style", "background: lightgrey");
         ticksDiv.innerText = "DISCONNECTED";
+        const reconnect = document.createElement("button");
+        reconnect.innerText = "Reconnect";
+        reconnect.onclick = () => {
+          this.startListening(interval);
+          reconnect.remove();
+        };
+        ticksDiv.append(reconnect);
         return;
       }
 
@@ -35,6 +45,7 @@ class ClientApp {
           }
           this.tick = tick;
           ticksDiv.innerText = `Age: ${tick} ticks`;
+          this.gardenDiv().innerText = json.garden;
         }
       } catch (error) {
         console.error(error);
@@ -44,5 +55,8 @@ class ClientApp {
   }
 }
 
-const app = new ClientApp(() => document.getElementById("age")!);
+const app = new ClientApp(
+  () => document.getElementById("age")!,
+  () => document.getElementById("garden")!
+);
 app.startListening(125);

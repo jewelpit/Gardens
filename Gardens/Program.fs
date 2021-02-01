@@ -24,7 +24,7 @@ let getUpdatesHandler (garden : Model.Garden) =
     fun next ctx ->
         task {
             let! ticks = garden.Ticks
-            return! Successful.ok (json { Model.Update.Tick = ticks }) next ctx
+            return! Successful.ok (json { Model.Update.Tick = ticks; Model.Update.Garden = garden.ToString() }) next ctx
         }
 
 let webApp (garden : Model.Garden) =
