@@ -2,6 +2,9 @@ module Gardens.Model
 
 open System
 
+[<Literal>]
+let SeedCooldown = 1000L
+
 type Tile =
     | Soil
     | Stone
@@ -70,7 +73,7 @@ type Garden(width, height) as this =
                             (struct (x, y))
                             {
                                 Type = Flower;
-                                Age = Adult (struct {| LastSeedAt = 0L |})
+                                Age = Adult (struct {| LastSeedAt = 0L - (int64 (random.Next()) % SeedCooldown) |})
                             }
                             plants)
                 else
@@ -92,7 +95,7 @@ type Garden(width, height) as this =
                 else
                     plants
             | Adult a ->
-                if a.LastSeedAt + 1000L < tick && random.Next() % 100 = 0 then
+                if a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
                     let plants = Map.add pos { plant with Age = Adult (struct {| LastSeedAt = tick |}) } plants
                     let radians = random.NextDouble() * 2.0 * Math.PI
                     let distance = random.NextDouble() * 10.0 + 1.0
