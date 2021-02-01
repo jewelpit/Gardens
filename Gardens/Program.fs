@@ -51,7 +51,7 @@ let configureCors (builder : CorsPolicyBuilder) =
    |> ignore<CorsPolicyBuilder>
 
 let configureApp (app : IApplicationBuilder) =
-    let garden = Model.Garden()
+    let garden = Model.Garden(80, 50)
     let env = app.ApplicationServices.GetService<IWebHostEnvironment>()
     let appBuilder =
         match env.IsDevelopment() with
