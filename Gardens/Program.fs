@@ -13,6 +13,11 @@ open Microsoft.Extensions.DependencyInjection
 open FSharp.Control.Tasks.Affine
 open Giraffe
 
+type Update = {
+    Tick : int64
+    Garden : string
+}
+
 let indexHandler (garden : Model.Garden) =
     fun next ctx ->
         task {
@@ -23,8 +28,8 @@ let indexHandler (garden : Model.Garden) =
 let getUpdatesHandler (garden : Model.Garden) =
     fun next ctx ->
         task {
-            let! ticks = garden.Ticks
-            return! Successful.ok (json { Model.Update.Tick = ticks; Model.Update.Garden = garden.ToString() }) next ctx
+            let! state = garden.GetState()
+            return! Successful.ok (json { Tick = state.Tick; Garden = state.Garden.Value }) next ctx
         }
 
 let webApp (garden : Model.Garden) =
