@@ -10,14 +10,22 @@ open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.DependencyInjection
 
+open FSharp.Control.Tasks.Affine
 open Giraffe
 
 let indexHandler (garden : Model.Garden) =
-    let view = Views.index garden
-    htmlView view
+    fun next ctx ->
+        task {
+            let! view = Views.index garden
+            return! htmlView view next ctx
+        }
 
 let getUpdatesHandler (garden : Model.Garden) =
-    Successful.ok (json { Model.Update.Tick = garden.Ticks })
+    fun next ctx ->
+        task {
+            let! ticks = garden.Ticks
+            return! Successful.ok (json { Model.Update.Tick = ticks }) next ctx
+        }
 
 let webApp (garden : Model.Garden) =
     choose [

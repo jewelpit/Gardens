@@ -3,24 +3,16 @@ module Gardens.Model
 open System
 
 type Garden() =
-    let mutable ticks = 0L
-    let mailbox = MailboxProcessor.Start(fun inbox ->
+    let mailbox = MailboxProcessor<AsyncReplyChannel<int64>>.Start(fun inbox ->
+        let creationStopwatch = Diagnostics.Stopwatch.StartNew()
         let rec messageLoop () =
             async {
-                let! () = inbox.Receive()
-                ticks <- ticks + 1L
+                let! replyChannel = inbox.Receive()
+                let ticks = creationStopwatch.ElapsedMilliseconds / 125L
+                replyChannel.Reply(ticks)
                 return! messageLoop ()
             }
         messageLoop ())
-    let timer = new Timers.Timer(50.0)
-    do
-        timer.Elapsed.Add(fun _ ->
-            if mailbox.CurrentQueueLength > 2 then
-                ()
-            else
-                mailbox.Post())
-        timer.AutoReset <- true
-        timer.Enabled <- true
 
     let garden =
         RogueSharp.Map.Create(
@@ -32,7 +24,8 @@ type Garden() =
                 500,
                 RogueSharp.Random.DotNetRandom()))
 
-    member __.Ticks = ticks
+    member __.Ticks =
+        Async.StartAsTask (mailbox.PostAndAsyncReply(id, 1500))
 
     override __.ToString() =
         let sb = Text.StringBuilder()

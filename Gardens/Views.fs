@@ -1,5 +1,6 @@
 module Gardens.Views
 
+open FSharp.Control.Tasks.Affine
 open Giraffe.ViewEngine
 
 let layout (content: XmlNode list) =
@@ -19,10 +20,13 @@ let layout (content: XmlNode list) =
     ]
 
 let index (garden : Model.Garden) =
-    layout [
-        h1 [] [str "ASCII Garden"]
-        p [_id "age"] [str (sprintf "Age: %d ticks" garden.Ticks)]
-        p [] [
-            pre [] [str (garden.ToString())]
+    task {
+        let! ticks = garden.Ticks
+        return layout [
+            h1 [] [str "ASCII Garden"]
+            p [_id "age"] [str (sprintf "Age: %d ticks" ticks)]
+            p [] [
+                pre [] [str (garden.ToString())]
+            ]
         ]
-    ]
+    }
