@@ -5,6 +5,9 @@ open System
 [<Literal>]
 let SeedCooldown = 1000L
 
+[<Literal>]
+let MaxFlowerAge = 10000L
+
 type Tile =
     | Soil
     | Stone
@@ -12,13 +15,14 @@ type Tile =
 type PlantType =
     | Flower
 
-type PlantAge =
-    | Seed of struct {| Planted: int64 |}
+type PlantStage =
+    | Seed
     | Adult of struct {| LastSeedAt: int64 |}
 
 type Plant = {
     Type : PlantType
-    Age : PlantAge
+    PlantedAt: int64
+    Stage : PlantStage
 }
 
 // Hee hee
@@ -69,8 +73,9 @@ type Garden(width, height) =
                         (Map.add
                             (struct (x, y))
                             {
-                                Type = Flower;
-                                Age = Adult (struct {| LastSeedAt = 0L - (int64 (random.Next()) % SeedCooldown) |})
+                                Type = Flower
+                                PlantedAt = 0L
+                                Stage = Adult (struct {| LastSeedAt = 0L - (int64 (random.Next()) % SeedCooldown) |})
                             }
                             plants)
                 else
@@ -83,7 +88,7 @@ type Garden(width, height) =
             for x in 0 .. (width - 1) do
                 match Map.tryFind (struct (x, y)) plants with
                 | Some p ->
-                    match p.Age with
+                    match p.Stage with
                     | Adult _ -> sb.Append("%")
                     | Seed _ -> sb.Append(",")
                 | None -> if garden.[y].[x] = Soil then sb.Append(".") else sb.Append("O")
@@ -95,15 +100,17 @@ type Garden(width, height) =
         let tick = state.Tick + 1L
         let plants =
             Map.fold (fun plants pos plant ->
-                match plant.Age with
-                | Seed s ->
-                    if s.Planted + 250L < tick then
-                        Map.add pos { plant with Age = Adult (struct {| LastSeedAt = tick |})} plants
+                match plant.Stage with
+                | Seed ->
+                    if plant.PlantedAt + 250L < tick then
+                        Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |})} plants
                     else
                         plants
                 | Adult a ->
-                    if a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
-                        let plants = Map.add pos { plant with Age = Adult (struct {| LastSeedAt = tick |}) } plants
+                    if plant.PlantedAt + MaxFlowerAge < tick && random.Next() % 100 = 0 then
+                        Map.remove pos plants
+                    elif a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
+                        let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
                         let radians = random.NextDouble() * 2.0 * Math.PI
                         let distance = random.NextDouble() * 10.0 + 1.0
                         let dx = Math.Cos(radians) * distance
@@ -115,7 +122,7 @@ type Garden(width, height) =
                         let inSoil = inBounds && tileAt x y = Soil // Gotta short circuit this one.
                         let empty = not (Map.containsKey (struct (x, y)) plants)
                         if inBounds && inSoil && empty then
-                            Map.add (struct (x, y)) { Type = Flower; Age = Seed (struct {| Planted = tick |}) } plants
+                            Map.add (struct (x, y)) { Type = Flower; PlantedAt = tick; Stage = Seed } plants
                         else
                             plants
                     else
