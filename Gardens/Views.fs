@@ -25,6 +25,7 @@ let index (garden : Model.Garden) =
         return layout [
             h1 [] [str "ASCII Garden"]
             p [_id "age"] [str (sprintf "Age: %d ticks" state.Tick)]
+            p [_id "numPlants"] [str (sprintf "Plants: %d" state.NumPlants)]
             p [] [
                 pre [_id "garden"] [str (state.Garden.Value)]
             ]

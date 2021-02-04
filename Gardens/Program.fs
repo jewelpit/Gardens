@@ -15,6 +15,7 @@ open Giraffe
 
 type Update = {
     Tick : int64
+    NumPlants : int
     Garden : string
 }
 
@@ -29,7 +30,11 @@ let getUpdatesHandler (garden : Model.Garden) =
     fun next ctx ->
         task {
             let! state = garden.GetState()
-            return! Successful.ok (json { Tick = state.Tick; Garden = state.Garden.Value }) next ctx
+            return! Successful.ok (json {
+                Tick = state.Tick
+                NumPlants = state.NumPlants
+                Garden = state.Garden.Value
+            }) next ctx
         }
 
 let webApp (garden : Model.Garden) =

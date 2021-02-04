@@ -29,6 +29,7 @@ type Plant = {
 type GardenState = {
     Tick : int64
     Plants : Map<struct (int * int), Plant>
+    NumPlants : int // Map<> calculates size lazily, so cache it
     Garden : Lazy<string>
 }
 
@@ -98,37 +99,44 @@ type Garden(width, height) =
 
     let handleTick state =
         let tick = state.Tick + 1L
-        let plants =
-            Map.fold (fun plants pos plant ->
-                match plant.Stage with
-                | Seed ->
-                    if plant.PlantedAt + 250L < tick then
-                        Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |})} plants
-                    else
-                        plants
-                | Adult a ->
-                    if random.Next() % (max (int (MaxFlowerAge - (tick - plant.PlantedAt))) 100) = 0 then
-                        Map.remove pos plants
-                    elif a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
-                        let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
-                        let radians = random.NextDouble() * 2.0 * Math.PI
-                        let distance = random.NextDouble() * 10.0 + 1.0
-                        let dx = Math.Cos(radians) * distance
-                        let dy = Math.Sin(radians) * distance
-                        let struct (x, y) = pos
-                        let x = int (Math.Round(float x + dx))
-                        let y = int (Math.Round(float y + dy))
-                        let inBounds = x >= 0 && x < width - 1 && y >= 0 && y < height - 1
-                        let inSoil = inBounds && tileAt x y = Soil // Gotta short circuit this one.
-                        let empty = not (Map.containsKey (struct (x, y)) plants)
-                        if inBounds && inSoil && empty then
-                            Map.add (struct (x, y)) { Type = Flower; PlantedAt = tick; Stage = Seed } plants
+        let (struct (numPlants, plants)) =
+            Map.fold (fun (struct (count, plants)) pos plant ->
+                let plants =
+                    match plant.Stage with
+                    | Seed ->
+                        if plant.PlantedAt + 250L < tick then
+                            Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |})} plants
                         else
                             plants
-                    else
-                        plants
-                ) state.Plants state.Plants
-        { Tick = tick; Plants = plants; Garden = Lazy<string>.Create(fun () -> displayGarden plants) }
+                    | Adult a ->
+                        if random.Next() % (max (int (MaxFlowerAge - (tick - plant.PlantedAt))) 100) = 0 then
+                            Map.remove pos plants
+                        elif a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
+                            let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
+                            let radians = random.NextDouble() * 2.0 * Math.PI
+                            let distance = random.NextDouble() * 10.0 + 1.0
+                            let dx = Math.Cos(radians) * distance
+                            let dy = Math.Sin(radians) * distance
+                            let struct (x, y) = pos
+                            let x = int (Math.Round(float x + dx))
+                            let y = int (Math.Round(float y + dy))
+                            let inBounds = x >= 0 && x < width - 1 && y >= 0 && y < height - 1
+                            let inSoil = inBounds && tileAt x y = Soil // Gotta short circuit this one.
+                            let empty = not (Map.containsKey (struct (x, y)) plants)
+                            if inBounds && inSoil && empty then
+                                Map.add (struct (x, y)) { Type = Flower; PlantedAt = tick; Stage = Seed } plants
+                            else
+                                plants
+                        else
+                            plants
+                struct (count + 1, plants)
+            ) (struct (0, state.Plants)) state.Plants
+        {
+            Tick = tick
+            Plants = plants
+            NumPlants = numPlants
+            Garden = Lazy<string>.Create(fun () -> displayGarden plants)
+        }
 
     let mailbox = MailboxProcessor<AsyncReplyChannel<GardenState>>.Start(fun inbox ->
         let creationStopwatch = Diagnostics.Stopwatch.StartNew()
@@ -152,7 +160,14 @@ type Garden(width, height) =
                 replyChannel.Reply(newState)
                 return! messageLoop baseTicks newState
             }
-        messageLoop 0L { Tick = 0L; Plants = spawnPlants (); Garden = Lazy<string>.CreateFromValue("")})
+        let plants = spawnPlants ()
+        messageLoop 0L {
+            Tick = 0L
+            Plants = plants
+            NumPlants = (Map.count plants)
+            Garden = Lazy<string>.CreateFromValue("")
+        }
+    )
 
     member __.GetState() =
         Async.StartAsTask (mailbox.PostAndAsyncReply(id))

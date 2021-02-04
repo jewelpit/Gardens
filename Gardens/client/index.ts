@@ -5,6 +5,7 @@ class ClientApp {
 
   constructor(
     readonly ticksDiv: () => HTMLElement,
+    readonly numPlantsDiv: () => HTMLElement,
     readonly gardenDiv: () => HTMLElement
   ) {
     this.tick = 0;
@@ -45,6 +46,15 @@ class ClientApp {
           }
           this.tick = tick;
           ticksDiv.innerText = `Age: ${tick} ticks`;
+
+          const numPlants = json.numPlants;
+          if (!Number.isFinite(numPlants)) {
+            throw new Error(
+              `Expected number for "numPlants", but was '${numPlants}'`
+            );
+          }
+          this.numPlantsDiv().innerText = `Plants: ${numPlants}`;
+
           this.gardenDiv().innerText = json.garden;
         }
       } catch (error) {
@@ -57,6 +67,7 @@ class ClientApp {
 
 const app = new ClientApp(
   () => document.getElementById("age")!,
+  () => document.getElementById("numPlants")!,
   () => document.getElementById("garden")!
 );
 app.startListening(125);
