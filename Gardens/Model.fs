@@ -107,7 +107,7 @@ type Garden(width, height) =
                     else
                         plants
                 | Adult a ->
-                    if plant.PlantedAt + MaxFlowerAge < tick && random.Next() % 100 = 0 then
+                    if random.Next() % (max (int (MaxFlowerAge - (tick - plant.PlantedAt))) 100) = 0 then
                         Map.remove pos plants
                     elif a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
                         let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
