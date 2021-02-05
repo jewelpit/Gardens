@@ -6,6 +6,7 @@ open System.Reflection
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Cors.Infrastructure
 open Microsoft.AspNetCore.Hosting
+open Microsoft.AspNetCore.Http
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.DependencyInjection
@@ -13,27 +14,32 @@ open Microsoft.Extensions.DependencyInjection
 open FSharp.Control.Tasks.Affine
 open Giraffe
 
+open Gardens.Utils
+
 type Update = {
     Tick : int64
     NumPlants : int
     Garden : string
+    NumWatchers : int
 }
 
 let indexHandler (garden : Model.Garden) =
-    fun next ctx ->
+    fun (next : HttpFunc) (ctx : HttpContext) ->
         task {
             let! view = Views.index garden
             return! htmlView view next ctx
         }
 
 let getUpdatesHandler (garden : Model.Garden) =
-    fun next ctx ->
+    fun (next : HttpFunc) (ctx : HttpContext) ->
         task {
-            let! state = garden.GetState()
+            let watcherId = dropErr (ctx.GetQueryStringValue("watcherId"))
+            let! state = garden.GetState(watcherId)
             return! Successful.ok (json {
                 Tick = state.Tick
                 NumPlants = state.NumPlants
                 Garden = state.Garden.Value
+                NumWatchers = state.NumWatchers
             }) next ctx
         }
 

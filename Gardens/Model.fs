@@ -31,6 +31,7 @@ type GardenState = {
     Plants : Map<struct (int * int), Plant>
     NumPlants : int // Map<> calculates size lazily, so cache it
     Garden : Lazy<string>
+    NumWatchers : int
 }
 
 type Garden(width, height) =
@@ -136,13 +137,31 @@ type Garden(width, height) =
             Plants = plants
             NumPlants = numPlants
             Garden = Lazy<string>.Create(fun () -> displayGarden plants)
+            NumWatchers = state.NumWatchers
         }
 
-    let mailbox = MailboxProcessor<AsyncReplyChannel<GardenState>>.Start(fun inbox ->
+    let updateWatchers newState watchers watcherId =
+        let watchers =
+            match watcherId with
+            | Some w -> Map.add w newState.Tick watchers
+            | None -> watchers
+        let (struct (watchers, numWatchers)) =
+            Map.fold (fun (struct (watchers, numWatchers)) watcherId lastQueryTick ->
+                if newState.Tick - lastQueryTick > 15L then
+                    struct (Map.remove watcherId watchers, numWatchers)
+                else
+                    struct (watchers, numWatchers + 1)
+            ) (struct (watchers, 0)) watchers
+        if numWatchers <> newState.NumWatchers then
+            struct ({ newState with NumWatchers = numWatchers }, watchers)
+        else
+            struct (newState, watchers)
+
+    let mailbox = MailboxProcessor<(string option * AsyncReplyChannel<GardenState>)>.Start(fun inbox ->
         let creationStopwatch = Diagnostics.Stopwatch.StartNew()
-        let rec messageLoop baseTicks cachedState =
+        let rec messageLoop baseTicks watchers cachedState =
             async {
-                let! replyChannel = inbox.Receive()
+                let! (watcherId, replyChannel) = inbox.Receive()
                 let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / 125L
                 let lastTick = cachedState.Tick
                 let (baseTicks, newState) =
@@ -157,17 +176,19 @@ type Garden(width, height) =
                             if state.Tick = lastTick + elapsedTicks then state else handleTick state
                         (baseTicks, advance cachedState)
                     else (baseTicks, cachedState)
+                let struct (newState, watchers) = updateWatchers newState watchers watcherId
                 replyChannel.Reply(newState)
-                return! messageLoop baseTicks newState
+                return! messageLoop baseTicks watchers newState
             }
         let plants = spawnPlants ()
-        messageLoop 0L {
+        messageLoop 0L Map.empty {
             Tick = 0L
             Plants = plants
             NumPlants = (Map.count plants)
             Garden = Lazy<string>.CreateFromValue("")
+            NumWatchers = 0
         }
     )
 
-    member __.GetState() =
-        Async.StartAsTask (mailbox.PostAndAsyncReply(id))
+    member __.GetState(watcherId) =
+        Async.StartAsTask (mailbox.PostAndAsyncReply(fun channel -> (watcherId, channel)))

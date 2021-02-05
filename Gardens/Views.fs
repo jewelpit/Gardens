@@ -21,11 +21,12 @@ let layout (content: XmlNode list) =
 
 let index (garden : Model.Garden) =
     task {
-        let! state = garden.GetState()
+        let! state = garden.GetState(None)
         return layout [
             h1 [] [str "ASCII Garden"]
             p [_id "age"] [str (sprintf "Age: %d ticks" state.Tick)]
             p [_id "numPlants"] [str (sprintf "Plants: %d" state.NumPlants)]
+            p [_id "numWatchers"] [str (sprintf "Watchers: %d" (state.NumWatchers + 1))]
             p [] [
                 pre [_id "garden"] [str (state.Garden.Value)]
             ]
