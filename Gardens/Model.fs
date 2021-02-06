@@ -121,7 +121,7 @@ type Garden(width, height) =
                             let struct (x, y) = pos
                             let x = int (Math.Round(float x + dx))
                             let y = int (Math.Round(float y + dy))
-                            let inBounds = x >= 0 && x < width - 1 && y >= 0 && y < height - 1
+                            let inBounds = x >= 0 && x < width && y >= 0 && y < height
                             let inSoil = inBounds && tileAt x y = Soil // Gotta short circuit this one.
                             let empty = not (Map.containsKey (struct (x, y)) plants)
                             if inBounds && inSoil && empty then
