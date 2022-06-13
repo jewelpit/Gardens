@@ -5,6 +5,9 @@
   "author": "Julia Pitts",
   "license": "MIT",
   "private": true,
+  "scripts": {
+    "tsc": "tsc"
+  },
   "devDependencies": {
     "prettier": "^2.2.1",
     "typescript": "^4.1.3"

@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <Target Name="CompileClient" BeforeTargets="AfterBuild" Outputs="client/dist/client.js">
-    <Exec Command="yarn tsc" WorkingDirectory="client" />
+    <Exec Command="npm run tsc" WorkingDirectory="client" />
     <Copy SourceFiles="client/dist/client.js" DestinationFolder="$(OutDir)/WebRoot/static" />
   </Target>
 </Project>
