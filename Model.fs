@@ -2,18 +2,37 @@ module Gardens.Model
 
 open System
 
-[<Literal>]
-let SeedCooldown = 1000L
-
-[<Literal>]
-let MaxFlowerAge = 10000L
-
+[<DefaultAugmentation(false)>]
+[<Struct>]
 type Tile =
-    | Soil
+    | Soil of struct {| Nitrogen: float |}
     | Stone
+
+    member this.IsSoil() =
+        match this with
+        | Soil _ -> true
+        | _ -> false
 
 type PlantType =
     | Flower
+
+    member this.SeedCooldown with get () =
+        match this with
+        | Flower -> 1000L
+
+    member this.MaxAge with get () =
+        match this with
+        | Flower -> 10000L
+
+    /// When the nitrogen falls below this level, plant changes (such as moving to adulthood or
+    /// releasing seeds) have a chance to result in a negative outcome.
+    member this.NitrogenBaseline with get () =
+        match this with
+        | Flower -> 6000
+
+    member this.NitrogenUsagePerTick with get () =
+        match this with
+        | Flower -> 1.0
 
 type PlantStage =
     | Seed
@@ -38,24 +57,27 @@ type Garden(width, height) =
     let random = Random()
 
     let garden =
-        let garden = Array.init height (fun _ -> Array.create width Soil)
-        let numStones = int (float ((random.Next() % 15 + 5)  * width * height) / 100.0)
+        let garden =
+            Array.init height (fun _ ->
+                Array.init width (fun _ ->
+                    Soil {| Nitrogen = (random.NextDouble() * 5000.0) + 7500.0 |}))
+        let numStones = int (float ((random.Next(15) + 5)  * width * height) / 100.0)
         let mutable stoneSeeds = Set.empty
-        let startingStoneSeedsCount = random.Next() % 30 + 31
+        let startingStoneSeedsCount = random.Next(30) + 31
         while Set.count stoneSeeds < startingStoneSeedsCount do
             stoneSeeds <- Set.add (struct (random.Next() % width, random.Next() % height)) stoneSeeds
         for _ = 1 to numStones do
             let toAdd =
                 stoneSeeds
                 |> Set.toSeq
-                |> Seq.skip (random.Next() % (Set.count stoneSeeds))
+                |> Seq.skip (random.Next(Set.count stoneSeeds))
                 |> Seq.head
             stoneSeeds <- Set.remove toAdd stoneSeeds
             let struct (x, y) = toAdd
             garden.[y].[x] <- Stone
             for y = max 0 (y - 1) to min (height - 1) (y + 1) do
                 for x = max 0 (x - 1) to min (width - 1) (x + 1) do
-                    if garden.[y].[x] = Soil then
+                    if garden.[y].[x].IsSoil() then
                         stoneSeeds <- Set.add (struct (x, y)) stoneSeeds
         garden
 
@@ -63,21 +85,22 @@ type Garden(width, height) =
         garden.[y].[x]
 
     let spawnPlants () =
-        let numPlants = int (float ((random.Next() % 15 + 5)  * width * height) / 100.0)
+        let numPlants = int (float ((random.Next(15) + 5)  * width * height) / 100.0)
         let rec placePlant plants =
             if Map.count plants >= numPlants then
                 plants
             else
-                let x = random.Next() % width
-                let y = random.Next() % height
-                if tileAt x y = Soil then
+                let x = random.Next(width)
+                let y = random.Next(height)
+                if (tileAt x y).IsSoil() then
+                    let lastSeedAt = 0L - (int64 (random.NextInt64(Flower.SeedCooldown)))
                     placePlant
                         (Map.add
                             (struct (x, y))
                             {
                                 Type = Flower
                                 PlantedAt = 0L
-                                Stage = Adult (struct {| LastSeedAt = 0L - (int64 (random.Next()) % SeedCooldown) |})
+                                Stage = Adult (struct {| LastSeedAt = lastSeedAt |})
                             }
                             plants)
                 else
@@ -92,46 +115,78 @@ type Garden(width, height) =
                 | Some p ->
                     match p.Stage with
                     | Adult _ -> sb.Append("%")
-                    | Seed _ -> sb.Append(",")
-                | None -> if garden.[y].[x] = Soil then sb.Append(".") else sb.Append("O")
+                    | Seed _ -> sb.Append(".")
+                | None -> if garden.[y].[x].IsSoil() then sb.Append(" ") else sb.Append("O")
                 |> ignore<Text.StringBuilder>
             sb.Append("\r\n") |> ignore<Text.StringBuilder>
         sb.ToString()
 
-    let handleTick state =
-        let tick = state.Tick + 1L
-        let (struct (numPlants, plants)) =
-            Map.fold (fun (struct (count, plants)) pos plant ->
-                let plants =
-                    match plant.Stage with
-                    | Seed ->
-                        if plant.PlantedAt + 250L < tick then
+    let updateSoil plants =
+        for KeyValue(struct (x, y), plant) in plants do
+            for y' = max 0 (y - 2) to min (height - 1) (y + 2) do
+                for x' = max 0 (x - 2) to min (width - 1) (x + 2) do
+                match tileAt x y with
+                | Stone -> ()
+                | Soil soil ->
+                    let distance = Math.Sqrt(float (y' - y) ** 2.0 + float (x' - x) ** 2.0)
+                    let nitrogenUsage = plant.Type.NitrogenUsagePerTick / (distance + 1.0)
+                    let newNitrogen = max 0.0 (soil.Nitrogen - nitrogenUsage)
+                    if newNitrogen <> soil.Nitrogen then
+                        garden.[y].[x] <- Soil {| soil with Nitrogen = newNitrogen |}
+
+    let canGrow (plantType : PlantType) x y =
+        match tileAt x y with
+        | Soil soil ->
+            soil.Nitrogen >= random.Next(plantType.NitrogenBaseline)
+        | Stone -> false
+
+    let updatePlants plants tick =
+        Map.fold (fun (struct (count, plants)) pos plant ->
+            let struct (x, y) = pos
+            let plants =
+                match plant.Stage with
+                | Seed ->
+                    if plant.PlantedAt + 250L < tick then
+                        if canGrow plant.Type x y then
                             Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |})} plants
                         else
-                            plants
-                    | Adult a ->
-                        if random.Next() % (max (int (MaxFlowerAge - (tick - plant.PlantedAt))) 100) = 0 then
+                            // Nothing personnel kid
                             Map.remove pos plants
-                        elif a.LastSeedAt + SeedCooldown < tick && random.Next() % 100 = 0 then
+                    else
+                        plants
+                | Adult a ->
+                    if random.Next(max (int (plant.Type.MaxAge - (tick - plant.PlantedAt))) 100) = 0 then
+                        Map.remove pos plants
+                    elif a.LastSeedAt + plant.Type.SeedCooldown < tick && random.Next(100) = 0 then
+                        if canGrow plant.Type x y then
                             let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
                             let radians = random.NextDouble() * 2.0 * Math.PI
                             let distance = random.NextDouble() * 10.0 + 1.0
                             let dx = Math.Cos(radians) * distance
                             let dy = Math.Sin(radians) * distance
-                            let struct (x, y) = pos
                             let x = int (Math.Round(float x + dx))
                             let y = int (Math.Round(float y + dy))
                             let inBounds = x >= 0 && x < width && y >= 0 && y < height
-                            let inSoil = inBounds && tileAt x y = Soil // Gotta short circuit this one.
+                            let inSoil = inBounds && (tileAt x y).IsSoil()
                             let empty = not (Map.containsKey (struct (x, y)) plants)
-                            if inBounds && inSoil && empty then
+                            if inSoil && empty then
                                 Map.add (struct (x, y)) { Type = Flower; PlantedAt = tick; Stage = Seed } plants
                             else
                                 plants
                         else
-                            plants
-                struct (count + 1, plants)
-            ) (struct (0, state.Plants)) state.Plants
+                            // Age the plant one hundred ticks instead of releasing a seed.
+                            Map.add
+                                (struct (x, y)) { plant with PlantedAt = plant.PlantedAt - 100L }
+                                plants
+                    else
+                        plants
+            struct (count + 1, plants)
+        ) (struct (0, plants)) plants
+
+    let handleTick state =
+        let tick = state.Tick + 1L
+        updateSoil state.Plants
+        let struct (numPlants, plants) = updatePlants state.Plants tick
         {
             Tick = tick
             Plants = plants
