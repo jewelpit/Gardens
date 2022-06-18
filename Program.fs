@@ -11,102 +11,109 @@ open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.DependencyInjection
 
+open Fable.Remoting.Server
+open Fable.Remoting.Giraffe
 open FSharp.Control.Tasks.Affine
 open Giraffe
 
-open Gardens.Utils
+open Gardens.Client.Types
 
-type Update = {
-    Tick : int64
-    NumPlants : int
-    Garden : string
-    NumWatchers : int
-}
+let (htmlResource, cssResource, jsResource) =
+    let serveResource (handler : string -> HttpHandler) (resourceName : string) =
+        let assembly = Assembly.GetExecutingAssembly()
 
-let indexHandler (garden : Model.Garden) =
-    fun (next : HttpFunc) (ctx : HttpContext) ->
-        task {
-            let! view = Views.index garden
-            return! htmlView view next ctx
-        }
+        let resource =
+            task {
+                use reader =
+                    new StreamReader(assembly.GetManifestResourceStream($"Gardens.{resourceName}"))
 
-let getUpdatesHandler (garden : Model.Garden) =
-    fun (next : HttpFunc) (ctx : HttpContext) ->
-        task {
-            let watcherId = dropErr (ctx.GetQueryStringValue("watcherId"))
-            let! state = garden.GetState(watcherId)
-            return! Successful.ok (json {
+                return! reader.ReadToEndAsync()
+            }
+
+        fun (next : HttpFunc) (ctx : HttpContext) ->
+            task {
+                let! resource = resource
+                return! (handler resource) next ctx
+            }
+
+    let sendContent contentType str =
+        fun (next : HttpFunc) (ctx : HttpContext) ->
+            ctx.SetContentType contentType
+            ctx.WriteStringAsync str
+
+    (serveResource htmlString, serveResource (sendContent "text/css"), serveResource (sendContent "text/javascript"))
+
+let webApp (garden : Model.Garden) =
+    let getUpdate watcherId =
+        async {
+            let! state = garden.GetState(watcherId) |> Async.AwaitTask
+
+            return {
                 Tick = state.Tick
                 NumPlants = state.NumPlants
                 Garden = state.Garden.Value
                 NumWatchers = state.NumWatchers
-            }) next ctx
+            }
         }
-
-let webApp (garden : Model.Garden) =
     choose [
-        GET >=>
-            choose [
-                route "/" >=> warbler (fun _ -> indexHandler garden)
-                route "/api/getUpdates" >=> warbler (fun _ -> getUpdatesHandler garden)
-            ]
+        GET >=> choose [
+            route "/" >=> htmlResource "client.public.index.html"
+            route "/bundle.js" >=> jsResource "client.public.bundle.js"
+            route "/main.css" >=> cssResource "client.public.main.css"
+        ]
+        Remoting.createApi()
+            |> Remoting.fromValue { GetUpdate = getUpdate }
+            |> Remoting.buildHttpHandler
         setStatusCode 404 >=> text "Not Found"
     ]
 
 let errorHandler (ex : Exception) (logger : ILogger) =
     logger.LogError(ex, "An unhandled exception has occurred while executing the request.")
-    clearResponse >=> setStatusCode 500 >=> text ex.Message
+
+    clearResponse
+    >=> setStatusCode 500
+    >=> text ex.Message
 
 let configureCors (builder : CorsPolicyBuilder) =
     builder
-        .WithOrigins(
-            "http://localhost:5000",
-            "https://localhost:5001")
-       .AllowAnyMethod()
-       .AllowAnyHeader()
-   |> ignore<CorsPolicyBuilder>
+        .WithOrigins("http://localhost:5000", "https://localhost:5001")
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+    |> ignore<CorsPolicyBuilder>
 
 let configureApp (app : IApplicationBuilder) =
     let garden = Model.Garden(80, 50)
     let env = app.ApplicationServices.GetService<IWebHostEnvironment>()
+
     let appBuilder =
         match env.IsDevelopment() with
-        | true  ->
-            app.UseDeveloperExceptionPage()
-        | false ->
-            app.UseGiraffeErrorHandler(errorHandler)
+        | true -> app.UseDeveloperExceptionPage()
+        | false -> app.UseGiraffeErrorHandler(errorHandler)
+
     appBuilder
         .UseCors(configureCors)
         .UseStaticFiles()
         .UseGiraffe(webApp garden)
 
 let configureServices (services : IServiceCollection) =
-    services
-        .AddCors()
-        .AddGiraffe()
+    services.AddCors().AddGiraffe()
     |> ignore<IServiceCollection>
 
 let configureLogging (builder : ILoggingBuilder) =
-    builder
-        .AddConsole()
-        .AddDebug()
+    builder.AddConsole().AddDebug()
     |> ignore<ILoggingBuilder>
 
 [<EntryPoint>]
 let main args =
-    let contentRoot = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
-    let webRoot = Path.Combine(contentRoot, "WebRoot")
     Host
         .CreateDefaultBuilder(args)
-        .ConfigureWebHostDefaults(
-            fun webHostBuilder ->
-                webHostBuilder
-                    .UseContentRoot(contentRoot)
-                    .UseWebRoot(webRoot)
-                    .Configure(Action<IApplicationBuilder> configureApp)
-                    .ConfigureServices(configureServices)
-                    .ConfigureLogging(configureLogging)
-                |> ignore<IWebHostBuilder>)
+        .ConfigureWebHostDefaults(fun webHostBuilder ->
+            webHostBuilder
+                .Configure(Action<IApplicationBuilder> configureApp)
+                .ConfigureServices(configureServices)
+                .ConfigureLogging(configureLogging)
+            |> ignore<IWebHostBuilder>)
         .Build()
         .Run()
+
     0

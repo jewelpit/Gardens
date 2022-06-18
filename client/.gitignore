@@ -1,0 +1,4 @@
+.fable
+*.fs.js
+bundle.js
+node_modules

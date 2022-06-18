@@ -141,10 +141,7 @@ type Garden(width, height) =
         }
 
     let updateWatchers newState watchers watcherId =
-        let watchers =
-            match watcherId with
-            | Some w -> Map.add w newState.Tick watchers
-            | None -> watchers
+        let watchers = Map.add watcherId newState.Tick watchers
         let (struct (watchers, numWatchers)) =
             Map.fold (fun (struct (watchers, numWatchers)) watcherId lastQueryTick ->
                 if newState.Tick - lastQueryTick > 15L then
@@ -157,7 +154,7 @@ type Garden(width, height) =
         else
             struct (newState, watchers)
 
-    let mailbox = MailboxProcessor<(string option * AsyncReplyChannel<GardenState>)>.Start(fun inbox ->
+    let mailbox = MailboxProcessor<(string * AsyncReplyChannel<GardenState>)>.Start(fun inbox ->
         let creationStopwatch = Diagnostics.Stopwatch.StartNew()
         let rec messageLoop baseTicks watchers cachedState =
             async {

@@ -6,27 +6,26 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Fable.Remoting.Giraffe" Version="5.9.0" />
     <PackageReference Include="Giraffe" Version="5.0.0-rc-6" />
     <PackageReference Include="Giraffe.ViewEngine" Version="1.3.*" />
     <PackageReference Include="Ply" Version="0.3.*" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Utils.fs" />
+    <Compile Include="client/src/Types.fs" />
     <Compile Include="Model.fs" />
-    <Compile Include="Views.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="web.config" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="WebRoot\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="client/public/index.html" />
+    <EmbeddedResource Include="client/public/main.css" />
+    <EmbeddedResource Include="client/public/bundle.js" />
   </ItemGroup>
 
-  <Target Name="CompileClient" BeforeTargets="AfterBuild" Outputs="client/dist/client.js">
-    <Exec Command="npm run tsc" WorkingDirectory="client" />
-    <Copy SourceFiles="client/dist/client.js" DestinationFolder="$(OutDir)/WebRoot/static" />
+  <Target Name="CompileClient" BeforeTargets="BeforeBuild" Outputs="client/public/bundle.js">
+    <Exec Command="npm run build" WorkingDirectory="client" />
   </Target>
 </Project>
