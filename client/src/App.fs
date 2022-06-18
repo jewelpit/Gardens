@@ -57,7 +57,7 @@ timerKey <-
                     updateState (Active update)
                 with e ->
                     failures <- failures + 1
-                    if failures > 50 then
+                    if failures > 15 then
                         clearInterval timerKey
                         updateState Disconnected
                     eprintfn "%s %s" (e.ToString()) e.Message
