@@ -49,7 +49,7 @@ type PlantType =
 
     member this.MinNitrogen with get () =
         match this with
-        | Flower -> 10_000
+        | Flower -> 5_000
         | Pea -> 0
 
     member this.MaxNitrogen with get () =
