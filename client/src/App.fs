@@ -8,7 +8,7 @@ open Fable.Core.JS
 open Fable.Remoting.Client
 
 [<Literal>]
-let TickLengthMs = 50
+let TickLengthMs = 125
 
 type State =
     | Active of Types.Update
@@ -52,32 +52,21 @@ let updateState =
                 window.location.reload()
             ageDiv.appendChild(reconnect) |> ignore<Types.Node>
 
-let rec query () =
-    async {
-        try
-            let! update = remoteApi.GetUpdate(watcherId, lastTick)
-            updateState (Active update)
-        with e ->
-            eprintfn "%s %s" (e.ToString()) e.Message
-        return! query ()
-    }
-query () |> Async.StartAsPromise |> ignore<Promise<unit>>
-
-// let mutable failures = 0
-// let mutable timerKey = 0
-// timerKey <-
-//     setInterval
-//         (fun () ->
-//             async {
-//                 try
-//                     let! update = remoteApi.GetUpdate(watcherId, lastTick)
-//                     failures <- 0
-//                     updateState (Active update)
-//                 with e ->
-//                     failures <- failures + 1
-//                     // if failures > 15 then
-//                     //     clearInterval timerKey
-//                     //     updateState Disconnected
-//                     eprintfn "%s %s" (e.ToString()) e.Message
-//             } |> Async.StartAsPromise |> ignore<Promise<unit>>)
-//         TickLengthMs
+let mutable failures = 0
+let mutable timerKey = 0
+timerKey <-
+    setInterval
+        (fun () ->
+            async {
+                try
+                    let! update = remoteApi.GetUpdate(watcherId, lastTick)
+                    failures <- 0
+                    updateState (Active update)
+                with e ->
+                    failures <- failures + 1
+                    if failures > 15 then
+                        clearInterval timerKey
+                        updateState Disconnected
+                    eprintfn "%s %s" (e.ToString()) e.Message
+            } |> Async.StartAsPromise |> ignore<Promise<unit>>)
+        TickLengthMs

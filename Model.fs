@@ -3,7 +3,7 @@ module Gardens.Model
 open System
 
 [<Literal>]
-let TickLengthMs = 1L
+let TickLengthMs = 125L
 
 let random = Random.Shared
 
