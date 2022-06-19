@@ -44,15 +44,19 @@ let (htmlResource, cssResource, jsResource) =
     (serveResource htmlString, serveResource (sendContent "text/css"), serveResource (sendContent "text/javascript"))
 
 let webApp (garden : Model.Garden) =
-    let getUpdate watcherId =
+    let getUpdate(watcherId, lastTick) =
         async {
             let! state = garden.GetState(watcherId) |> Async.AwaitTask
 
             return {
                 Tick = state.Tick
-                NumPlants = state.NumPlants
+                NumPlants =
+                    state.NumPlants
+                    |> Seq.map (fun kvp -> (kvp.Key.ToString(), kvp.Value))
+                    |> Map.ofSeq
                 Garden = state.Garden.Value
                 NumWatchers = state.NumWatchers
+                ForceReset = lastTick > state.Tick
             }
         }
     choose [

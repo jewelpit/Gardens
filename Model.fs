@@ -2,6 +2,11 @@ module Gardens.Model
 
 open System
 
+[<Literal>]
+let TickLengthMs = 1L
+
+let random = Random.Shared
+
 [<DefaultAugmentation(false)>]
 [<Struct>]
 type Tile =
@@ -15,24 +20,52 @@ type Tile =
 
 type PlantType =
     | Flower
+    | Pea
+
+    member this.Appearance with get () =
+        match this with
+        | Flower -> '%'
+        | Pea -> 'ſ'
+
+    member this.SeedAppearance with get () =
+        match this with
+        | Flower -> '.'
+        | Pea -> ','
 
     member this.SeedCooldown with get () =
         match this with
-        | Flower -> 1000L
+        | Flower -> 1_000L
+        | Pea -> 3_000L
+
+    member this.SeedDistance with get () =
+        match this with
+        | Flower -> 20.0
+        | Pea -> 5.0
 
     member this.MaxAge with get () =
         match this with
-        | Flower -> 10000L
+        | Flower -> 10_000L
+        | Pea -> 20_000L
 
-    /// When the nitrogen falls below this level, plant changes (such as moving to adulthood or
-    /// releasing seeds) have a chance to result in a negative outcome.
-    member this.NitrogenBaseline with get () =
+    member this.MinNitrogen with get () =
         match this with
-        | Flower -> 6000
+        | Flower -> 10_000
+        | Pea -> 0
+
+    member this.MaxNitrogen with get () =
+        match this with
+        | Flower -> 250_000
+        | Pea -> 100_000
+
+    member this.NitrogenSpread with get () =
+        match this with
+        | Flower -> 2
+        | Pea -> 5
 
     member this.NitrogenUsagePerTick with get () =
         match this with
         | Flower -> 1.0
+        | Pea -> -5.0
 
 type PlantStage =
     | Seed
@@ -48,19 +81,17 @@ type Plant = {
 type GardenState = {
     Tick : int64
     Plants : Map<struct (int * int), Plant>
-    NumPlants : int // Map<> calculates size lazily, so cache it
+    NumPlants : Map<PlantType, int>
     Garden : Lazy<string>
     NumWatchers : int
 }
 
 type Garden(width, height) =
-    let random = Random()
-
     let garden =
         let garden =
             Array.init height (fun _ ->
                 Array.init width (fun _ ->
-                    Soil {| Nitrogen = (random.NextDouble() * 5000.0) + 7500.0 |}))
+                    Soil {| Nitrogen = float (random.Next(5_000) + 17_500) |}))
         let numStones = int (float ((random.Next(15) + 5)  * width * height) / 100.0)
         let mutable stoneSeeds = Set.empty
         let startingStoneSeedsCount = random.Next(30) + 31
@@ -92,13 +123,14 @@ type Garden(width, height) =
             else
                 let x = random.Next(width)
                 let y = random.Next(height)
+                let plantType = if random.NextDouble() < 0.75 then Flower else Pea
                 if (tileAt x y).IsSoil() then
-                    let lastSeedAt = 0L - (int64 (random.NextInt64(Flower.SeedCooldown)))
+                    let lastSeedAt = 0L - (int64 (random.NextInt64(plantType.SeedCooldown)))
                     placePlant
                         (Map.add
                             (struct (x, y))
                             {
-                                Type = Flower
+                                Type = plantType
                                 PlantedAt = 0L
                                 Stage = Adult (struct {| LastSeedAt = lastSeedAt |})
                             }
@@ -114,34 +146,41 @@ type Garden(width, height) =
                 match Map.tryFind (struct (x, y)) plants with
                 | Some p ->
                     match p.Stage with
-                    | Adult _ -> sb.Append("%")
-                    | Seed _ -> sb.Append(".")
-                | None -> if garden.[y].[x].IsSoil() then sb.Append(" ") else sb.Append("O")
+                    | Adult _ -> sb.Append(p.Type.Appearance)
+                    | Seed _ -> sb.Append(p.Type.SeedAppearance)
+                | None ->
+                    match tileAt x y with
+                    | Soil _ -> sb.Append(" ")
+                    | Stone -> sb.Append("O")
                 |> ignore<Text.StringBuilder>
             sb.Append("\r\n") |> ignore<Text.StringBuilder>
         sb.ToString()
 
     let updateSoil plants =
         for KeyValue(struct (x, y), plant) in plants do
-            for y' = max 0 (y - 2) to min (height - 1) (y + 2) do
-                for x' = max 0 (x - 2) to min (width - 1) (x + 2) do
-                match tileAt x y with
-                | Stone -> ()
-                | Soil soil ->
-                    let distance = Math.Sqrt(float (y' - y) ** 2.0 + float (x' - x) ** 2.0)
-                    let nitrogenUsage = plant.Type.NitrogenUsagePerTick / (distance + 1.0)
-                    let newNitrogen = max 0.0 (soil.Nitrogen - nitrogenUsage)
-                    if newNitrogen <> soil.Nitrogen then
-                        garden.[y].[x] <- Soil {| soil with Nitrogen = newNitrogen |}
+            if plant.Stage = Seed then () else
+            let spread = plant.Type.NitrogenSpread
+            for y' = max 0 (y - spread) to min (height - 1) (y + spread) do
+                for x' = max 0 (x - spread) to min (width - 1) (x + spread) do
+                    match tileAt x' y' with
+                    | Stone -> ()
+                    | Soil soil ->
+                        let distance = Math.Sqrt(float (y' - y) ** 2.0 + float (x' - x) ** 2.0)
+                        if ceil distance <= spread then
+                            let nitrogenUsage = plant.Type.NitrogenUsagePerTick / (distance + 1.0)
+                            let newNitrogen = max 0.0 (soil.Nitrogen - nitrogenUsage)
+                            if newNitrogen <> soil.Nitrogen then
+                                garden.[y'].[x'] <- Soil {| soil with Nitrogen = newNitrogen |}
 
     let canGrow (plantType : PlantType) x y =
         match tileAt x y with
         | Soil soil ->
-            soil.Nitrogen >= random.Next(plantType.NitrogenBaseline)
+            random.Next(plantType.MinNitrogen) >= int soil.Nitrogen
+                && random.Next(int soil.Nitrogen) <= plantType.MaxNitrogen
         | Stone -> false
 
     let updatePlants plants tick =
-        Map.fold (fun (struct (count, plants)) pos plant ->
+        Map.fold (fun (struct (numPlants, plants)) pos plant ->
             let struct (x, y) = pos
             let plants =
                 match plant.Stage with
@@ -158,30 +197,36 @@ type Garden(width, height) =
                     if random.Next(max (int (plant.Type.MaxAge - (tick - plant.PlantedAt))) 100) = 0 then
                         Map.remove pos plants
                     elif a.LastSeedAt + plant.Type.SeedCooldown < tick && random.Next(100) = 0 then
-                        if canGrow plant.Type x y then
-                            let plants = Map.add pos { plant with Stage = Adult (struct {| LastSeedAt = tick |}) } plants
-                            let radians = random.NextDouble() * 2.0 * Math.PI
-                            let distance = random.NextDouble() * 10.0 + 1.0
-                            let dx = Math.Cos(radians) * distance
-                            let dy = Math.Sin(radians) * distance
-                            let x = int (Math.Round(float x + dx))
-                            let y = int (Math.Round(float y + dy))
-                            let inBounds = x >= 0 && x < width && y >= 0 && y < height
-                            let inSoil = inBounds && (tileAt x y).IsSoil()
-                            let empty = not (Map.containsKey (struct (x, y)) plants)
-                            if inSoil && empty then
-                                Map.add (struct (x, y)) { Type = Flower; PlantedAt = tick; Stage = Seed } plants
-                            else
-                                plants
-                        else
-                            // Age the plant one hundred ticks instead of releasing a seed.
+                        // Nitrogen deficiency causes seed production to age a plant at a faster rate.
+                        let ageMod = if canGrow plant.Type x y then 1000L else 0L
+                        let plants =
                             Map.add
-                                (struct (x, y)) { plant with PlantedAt = plant.PlantedAt - 100L }
+                                pos
+                                { plant with
+                                    Stage = Adult (struct {| LastSeedAt = tick |})
+                                    PlantedAt = plant.PlantedAt - ageMod
+                                }
                                 plants
+                        let radians = random.NextDouble() * 2.0 * Math.PI
+                        let distance = random.NextDouble() * plant.Type.SeedDistance + 1.0
+                        let dx = Math.Cos(radians) * distance
+                        let dy = Math.Sin(radians) * distance
+                        let x = int (Math.Round(float x + dx))
+                        let y = int (Math.Round(float y + dy))
+                        let inBounds = x >= 0 && x < width && y >= 0 && y < height
+                        let inSoil = inBounds && (tileAt x y).IsSoil()
+                        let empty = not (Map.containsKey (struct (x, y)) plants)
+                        if inSoil && empty then
+                            Map.add (struct (x, y)) { Type = plant.Type; PlantedAt = tick; Stage = Seed } plants
+                        else
+                            plants
                     else
                         plants
-            struct (count + 1, plants)
-        ) (struct (0, plants)) plants
+            // This is always going to be one tick behind when counting deaths, but that's fine.
+            let plantTypeCount = Map.tryFind plant.Type numPlants |> Option.defaultValue 0
+            let numPlants = Map.add plant.Type (plantTypeCount + 1) numPlants
+            struct (numPlants, plants)
+        ) (struct (Map.empty, plants)) plants
 
     let handleTick state =
         let tick = state.Tick + 1L
@@ -214,19 +259,22 @@ type Garden(width, height) =
         let rec messageLoop baseTicks watchers cachedState =
             async {
                 let! (watcherId, replyChannel) = inbox.Receive()
-                let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / 125L
+                let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / TickLengthMs
                 let lastTick = cachedState.Tick
                 let (baseTicks, newState) =
                     if ticks <> lastTick then
-                        let elapsedTicks = min 1000L (ticks - lastTick)
+                        let elapsedTicks = min 10L (ticks - lastTick)
                         let baseTicks =
                             if elapsedTicks <> ticks - lastTick then
                                 creationStopwatch.Restart()
                                 lastTick + elapsedTicks
                             else baseTicks
                         let rec advance state =
-                            if state.Tick = lastTick + elapsedTicks then state else handleTick state
-                        (baseTicks, advance cachedState)
+                            if state.Tick = lastTick + elapsedTicks then
+                                state
+                            else
+                                advance ( state)
+                        (baseTicks, handleTick cachedState)
                     else (baseTicks, cachedState)
                 let struct (newState, watchers) = updateWatchers newState watchers watcherId
                 replyChannel.Reply(newState)
@@ -236,7 +284,7 @@ type Garden(width, height) =
         messageLoop 0L Map.empty {
             Tick = 0L
             Plants = plants
-            NumPlants = (Map.count plants)
+            NumPlants = Map.empty
             Garden = Lazy<string>.CreateFromValue("")
             NumWatchers = 0
         }

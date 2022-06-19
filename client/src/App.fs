@@ -7,6 +7,9 @@ open Fable.Core
 open Fable.Core.JS
 open Fable.Remoting.Client
 
+[<Literal>]
+let TickLengthMs = 50
+
 type State =
     | Active of Types.Update
     | Disconnected
@@ -18,8 +21,8 @@ let remoteApi =
     Remoting.createApi()
     |> Remoting.buildProxy<Types.RemoteApi>
 
+let mutable lastTick: int64 = 0L
 let updateState =
-    let mutable lastTick: int64 = 0L
     let ageDiv = document.getElementById("age")
     let numPlantsDiv = document.getElementById("numPlants")
     let numWatchersDiv = document.getElementById("numWatchers")
@@ -28,12 +31,16 @@ let updateState =
     fun newState ->
         match newState with
         | Active update ->
-            if update.Tick <= lastTick then
+            if update.Tick <= lastTick && not update.ForceReset then
                 printfn "Received a stale update (current: %d, update: %d)" lastTick update.Tick
             else
                 lastTick <- update.Tick
                 ageDiv.innerText <- sprintf "Age: %d ticks" update.Tick
-                numPlantsDiv.innerText <- sprintf "Plants: %d" update.NumPlants
+                numPlantsDiv.innerText <- sprintf "Plants: %s" (
+                    update.NumPlants
+                    |> Seq.map (fun kvp -> sprintf "%d %ss" kvp.Value (kvp.Key.ToLower()))
+                    |> String.concat ", "
+                )
                 numWatchersDiv.innerText <- sprintf "Watchers: %d" update.NumWatchers
                 gardenDiv.innerText <- update.Garden
         | Disconnected ->
@@ -45,21 +52,32 @@ let updateState =
                 window.location.reload()
             ageDiv.appendChild(reconnect) |> ignore<Types.Node>
 
-let mutable failures = 0
-let mutable timerKey = 0
-timerKey <-
-    setInterval
-        (fun () ->
-            async {
-                try
-                    let! update = remoteApi.GetUpdate(watcherId)
-                    failures <- 0
-                    updateState (Active update)
-                with e ->
-                    failures <- failures + 1
-                    if failures > 15 then
-                        clearInterval timerKey
-                        updateState Disconnected
-                    eprintfn "%s %s" (e.ToString()) e.Message
-            } |> Async.StartAsPromise |> ignore<Promise<unit>>)
-        125
+let rec query () =
+    async {
+        try
+            let! update = remoteApi.GetUpdate(watcherId, lastTick)
+            updateState (Active update)
+        with e ->
+            eprintfn "%s %s" (e.ToString()) e.Message
+        return! query ()
+    }
+query () |> Async.StartAsPromise |> ignore<Promise<unit>>
+
+// let mutable failures = 0
+// let mutable timerKey = 0
+// timerKey <-
+//     setInterval
+//         (fun () ->
+//             async {
+//                 try
+//                     let! update = remoteApi.GetUpdate(watcherId, lastTick)
+//                     failures <- 0
+//                     updateState (Active update)
+//                 with e ->
+//                     failures <- failures + 1
+//                     // if failures > 15 then
+//                     //     clearInterval timerKey
+//                     //     updateState Disconnected
+//                     eprintfn "%s %s" (e.ToString()) e.Message
+//             } |> Async.StartAsPromise |> ignore<Promise<unit>>)
+//         TickLengthMs
