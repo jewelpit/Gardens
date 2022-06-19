@@ -34,7 +34,7 @@ type PlantType =
 
     member this.SeedCooldown with get () =
         match this with
-        | Flower -> 1_000L
+        | Flower -> 750L
         | Pea -> 3_000L
 
     member this.SeedDistance with get () =
@@ -175,7 +175,7 @@ type Garden(width, height) =
     let canGrow (plantType : PlantType) x y =
         match tileAt x y with
         | Soil soil ->
-            random.Next(plantType.MinNitrogen) >= int soil.Nitrogen
+            random.Next(plantType.MinNitrogen) <= int soil.Nitrogen
                 && random.Next(int soil.Nitrogen) <= plantType.MaxNitrogen
         | Stone -> false
 
