@@ -25,7 +25,7 @@
     <EmbeddedResource Include="client/public/bundle.js" />
   </ItemGroup>
 
-  <Target Name="CompileClient" BeforeTargets="BeforeBuild" Outputs="client/public/bundle.js">
+  <Target Name="CompileClient" BeforeTargets="BeforeBuild" Inputs="client/src/*.fs*" Outputs="client/public/bundle.js">
     <Exec Command="npm run build" WorkingDirectory="client" />
   </Target>
 </Project>
