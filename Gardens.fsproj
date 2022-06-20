@@ -21,7 +21,6 @@
   <ItemGroup>
     <None Include="web.config" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="client/public/index.html" />
-    <EmbeddedResource Include="client/public/main.css" />
     <EmbeddedResource Include="client/public/bundle.js" />
   </ItemGroup>
 

@@ -4,29 +4,84 @@
 <head>
   <meta charset="utf-8">
   <title>ASCII Garden</title>
-  <link rel="stylesheet" href="main.css">
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #333;
+      font-size: 0.9em;
+    }
+
+    h1 {
+      font-size: 1.5em;
+      color: #334499;
+    }
+
+    .bg-gray {
+      background: lightgray;
+    }
+
+    .bg-white {
+      background: white;
+    }
+
+    .flex {
+      display: flex;
+    }
+
+    .spacer {
+      flex-grow: 1;
+    }
+
+    .padded {
+      padding: 1em;
+    }
+
+    .tiny-padded {
+      padding: 0.5em;
+    }
+
+    .no-margin {
+      margin: 0px;
+    }
+
+    .narrow-fixed {
+      width: 20em;
+    }
+  </style>
 </head>
 
 <body>
   <div class="flex">
     <div class="spacer"></div>
+
     <div>
       <h1>ASCII Garden</h1>
       <div class="flex">
-        <div id="age" class="spacer left">
-          LOADING...
+        <div class="bg-gray padded">
+          <pre id="garden" class="bg-white tiny-padded no-margin">LOADING...</pre>
         </div>
-        <div id="numPlants" class="spacer center">
-          LOADING...
-        </div>
-        <div id="numWatchers" class="spacer right">
-          LOADING...
+
+        <div class="narrow-fixed padded">
+          <div id="age">
+            LOADING...
+          </div>
+          <div class="tiny-padded"></div>
+          <div id="numPlants">
+            LOADING...
+          </div>
+          <div class="tiny-padded"></div>
+          <div id="numWatchers">
+            LOADING...
+          </div>
+          <div class="padded"></div>
+          <div id="tooltip"></div>
         </div>
       </div>
-      <pre id="garden">LOADING...</pre>
     </div>
+
     <div class="spacer"></div>
   </div>
+
   <script src="bundle.js"></script>
 </body>
 

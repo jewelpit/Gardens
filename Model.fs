@@ -2,80 +2,12 @@ module Gardens.Model
 
 open System
 
+open Client.Types
+
 [<Literal>]
 let TickLengthMs = 125L
 
 let random = Random.Shared
-
-[<DefaultAugmentation(false)>]
-[<Struct>]
-type Tile =
-    | Soil of struct {| Nitrogen: float |}
-    | Stone
-
-    member this.IsSoil() =
-        match this with
-        | Soil _ -> true
-        | _ -> false
-
-type PlantType =
-    | Flower
-    | Pea
-
-    member this.Appearance with get () =
-        match this with
-        | Flower -> '%'
-        | Pea -> 'ſ'
-
-    member this.SeedAppearance with get () =
-        match this with
-        | Flower -> '.'
-        | Pea -> ','
-
-    member this.SeedCooldown with get () =
-        match this with
-        | Flower -> 750L
-        | Pea -> 3_000L
-
-    member this.SeedDistance with get () =
-        match this with
-        | Flower -> 20.0
-        | Pea -> 5.0
-
-    member this.MaxAge with get () =
-        match this with
-        | Flower -> 10_000L
-        | Pea -> 20_000L
-
-    member this.MinNitrogen with get () =
-        match this with
-        | Flower -> 5_000
-        | Pea -> 0
-
-    member this.MaxNitrogen with get () =
-        match this with
-        | Flower -> 250_000
-        | Pea -> 100_000
-
-    member this.NitrogenSpread with get () =
-        match this with
-        | Flower -> 2
-        | Pea -> 5
-
-    member this.NitrogenUsagePerTick with get () =
-        match this with
-        | Flower -> 1.0
-        | Pea -> -5.0
-
-type PlantStage =
-    | Seed
-    | Adult of struct {| LastSeedAt: int64 |}
-
-type Plant = {
-    Type : PlantType
-    PlantedAt: int64
-    Stage : PlantStage
-}
 
 // Hee hee
 type GardenState = {
@@ -108,7 +40,7 @@ type Garden(width, height) =
             garden.[y].[x] <- Stone
             for y = max 0 (y - 1) to min (height - 1) (y + 1) do
                 for x = max 0 (x - 1) to min (width - 1) (x + 1) do
-                    if garden.[y].[x].IsSoil() then
+                    if garden.[y].[x].CanGrowPlants() then
                         stoneSeeds <- Set.add (struct (x, y)) stoneSeeds
         garden
 
@@ -124,7 +56,7 @@ type Garden(width, height) =
                 let x = random.Next(width)
                 let y = random.Next(height)
                 let plantType = if random.NextDouble() < 0.75 then Flower else Pea
-                if (tileAt x y).IsSoil() then
+                if (tileAt x y).CanGrowPlants() then
                     let lastSeedAt = 0L - (int64 (random.NextInt64(plantType.SeedCooldown)))
                     placePlant
                         (Map.add
@@ -214,7 +146,7 @@ type Garden(width, height) =
                         let x = int (Math.Round(float x + dx))
                         let y = int (Math.Round(float y + dy))
                         let inBounds = x >= 0 && x < width && y >= 0 && y < height
-                        let inSoil = inBounds && (tileAt x y).IsSoil()
+                        let inSoil = inBounds && (tileAt x y).CanGrowPlants()
                         let empty = not (Map.containsKey (struct (x, y)) plants)
                         if inSoil && empty then
                             Map.add (struct (x, y)) { Type = plant.Type; PlantedAt = tick; Stage = Seed } plants
@@ -254,41 +186,63 @@ type Garden(width, height) =
         else
             struct (newState, watchers)
 
-    let mailbox = MailboxProcessor<(string * AsyncReplyChannel<GardenState>)>.Start(fun inbox ->
-        let creationStopwatch = Diagnostics.Stopwatch.StartNew()
-        let rec messageLoop baseTicks watchers cachedState =
-            async {
-                let! (watcherId, replyChannel) = inbox.Receive()
-                let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / TickLengthMs
-                let lastTick = cachedState.Tick
-                let (baseTicks, newState) =
-                    if ticks <> lastTick then
-                        let elapsedTicks = min 10L (ticks - lastTick)
-                        let baseTicks =
-                            if elapsedTicks <> ticks - lastTick then
-                                creationStopwatch.Restart()
-                                lastTick + elapsedTicks
-                            else baseTicks
-                        let rec advance state =
-                            if state.Tick = lastTick + elapsedTicks then
-                                state
-                            else
-                                advance ( state)
-                        (baseTicks, handleTick cachedState)
-                    else (baseTicks, cachedState)
-                let struct (newState, watchers) = updateWatchers newState watchers watcherId
-                replyChannel.Reply(newState)
-                return! messageLoop baseTicks watchers newState
+    let mailbox =
+        MailboxProcessor<{|
+            WatcherId : string
+            HoveredTile : Option<int * int>
+            ReplyChannel : AsyncReplyChannel<GardenState * Option<HoveredTileInfo>>
+        |}>.Start(fun inbox ->
+            let creationStopwatch = Diagnostics.Stopwatch.StartNew()
+            let rec messageLoop baseTicks watchers cachedState =
+                async {
+                    let! message = inbox.Receive()
+                    let (watcherId, hoveredTile, replyChannel) =
+                        (message.WatcherId, message.HoveredTile, message.ReplyChannel)
+                    let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / TickLengthMs
+                    let lastTick = cachedState.Tick
+                    let (baseTicks, newState) =
+                        if ticks <> lastTick then
+                            let elapsedTicks = min 10L (ticks - lastTick)
+                            let baseTicks =
+                                if elapsedTicks <> ticks - lastTick then
+                                    creationStopwatch.Restart()
+                                    lastTick + elapsedTicks
+                                else baseTicks
+                            let rec advance state =
+                                if state.Tick = lastTick + elapsedTicks then
+                                    state
+                                else
+                                    advance ( state)
+                            (baseTicks, handleTick cachedState)
+                        else (baseTicks, cachedState)
+                    let struct (newState, watchers) = updateWatchers newState watchers watcherId
+                    let hoveredTileInfo =
+                        hoveredTile
+                        |> Option.map (fun (x, y) ->
+                            {
+                                Position = (x, y)
+                                Tile = tileAt x y
+                                Plant = Map.tryFind (struct (x, y)) newState.Plants
+                            })
+                    replyChannel.Reply((newState, hoveredTileInfo))
+                    return! messageLoop baseTicks watchers newState
+                }
+            let plants = spawnPlants ()
+            messageLoop 0L Map.empty {
+                Tick = 0L
+                Plants = plants
+                NumPlants = Map.empty
+                Garden = Lazy<string>.CreateFromValue("")
+                NumWatchers = 0
             }
-        let plants = spawnPlants ()
-        messageLoop 0L Map.empty {
-            Tick = 0L
-            Plants = plants
-            NumPlants = Map.empty
-            Garden = Lazy<string>.CreateFromValue("")
-            NumWatchers = 0
-        }
-    )
+        )
 
-    member __.GetState(watcherId) =
-        Async.StartAsTask (mailbox.PostAndAsyncReply(fun channel -> (watcherId, channel)))
+    member __.Width with get () =
+        width
+
+    member __.Height with get () =
+        height
+
+    member __.GetState(watcherId, hoveredTile) =
+        Async.StartAsTask (mailbox.PostAndAsyncReply(fun channel ->
+            {| WatcherId = watcherId; HoveredTile = hoveredTile; ReplyChannel = channel |}))

@@ -18,7 +18,7 @@ open Giraffe
 
 open Gardens.Client.Types
 
-let (htmlResource, cssResource, jsResource) =
+let (htmlResource, jsResource) =
     let serveResource (handler : string -> HttpHandler) (resourceName : string) =
         let assembly = Assembly.GetExecutingAssembly()
 
@@ -41,12 +41,21 @@ let (htmlResource, cssResource, jsResource) =
             ctx.SetContentType contentType
             ctx.WriteStringAsync str
 
-    (serveResource htmlString, serveResource (sendContent "text/css"), serveResource (sendContent "text/javascript"))
+    (serveResource htmlString, serveResource (sendContent "text/javascript"))
 
 let webApp (garden : Model.Garden) =
-    let getUpdate(watcherId, lastTick) =
+    let getConfig () =
         async {
-            let! state = garden.GetState(watcherId) |> Async.AwaitTask
+            return {
+                TickLengthMs = int Model.TickLengthMs
+                GardenWidth = garden.Width
+                GardenHeight = garden.Height
+            }
+        }
+
+    let getUpdate (watcherId, lastTick, hoveredTile) =
+        async {
+            let! (state, hoveredTileInfo) = garden.GetState(watcherId, hoveredTile) |> Async.AwaitTask
 
             return {
                 Tick = state.Tick
@@ -56,6 +65,7 @@ let webApp (garden : Model.Garden) =
                     |> Map.ofSeq
                 Garden = state.Garden.Value
                 NumWatchers = state.NumWatchers
+                HoveredTileInfo = hoveredTileInfo
                 ForceReset = lastTick > state.Tick
             }
         }
@@ -63,10 +73,10 @@ let webApp (garden : Model.Garden) =
         GET >=> choose [
             route "/" >=> htmlResource "client.public.index.html"
             route "/bundle.js" >=> jsResource "client.public.bundle.js"
-            route "/main.css" >=> cssResource "client.public.main.css"
         ]
         Remoting.createApi()
-            |> Remoting.fromValue { GetUpdate = getUpdate }
+            |> Remoting.withErrorHandler (fun ex _ -> Propagate ex)
+            |> Remoting.fromValue { GetConfig = getConfig; GetUpdate = getUpdate }
             |> Remoting.buildHttpHandler
         setStatusCode 404 >=> text "Not Found"
     ]
