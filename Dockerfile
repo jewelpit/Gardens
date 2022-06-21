@@ -8,11 +8,8 @@ FROM base-env
 
 WORKDIR /source
 
-COPY client/package.json client/package-lock.json ./client/
-RUN cd client && npm install
-
-COPY *.fsproj .
-RUN dotnet restore
-
 COPY . .
+RUN cd client && npm install
+RUN dotnet restore
+RUN dotnet build
 ENTRYPOINT dotnet run --no-launch-profile
