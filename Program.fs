@@ -90,7 +90,7 @@ let errorHandler (ex : Exception) (logger : ILogger) =
 
 let configureCors (builder : CorsPolicyBuilder) =
     builder
-        .WithOrigins("http://localhost:5000", "https://localhost:5001")
+        .WithOrigins("http://localhost:5000", "https://localhost:5001", "https://gardens.robo.church")
         .AllowAnyMethod()
         .AllowAnyHeader()
     |> ignore<CorsPolicyBuilder>
