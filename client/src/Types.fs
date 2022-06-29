@@ -6,7 +6,6 @@ type Config = {
     GardenHeight : int
 }
 
-// [<DefaultAugmentation(false)>]
 [<Struct>]
 type Tile =
     | Soil of {| Nitrogen: float |}
@@ -88,8 +87,8 @@ type WatcherAction =
 
     member this.ActionCost with get () =
         match this with
-        | SowSeeds -> 1_0
-        | Fertilize -> 3_5
+        | SowSeeds -> 1_000
+        | Fertilize -> 3_500
 
 type Update = {
     Tick : int64
