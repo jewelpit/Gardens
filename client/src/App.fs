@@ -7,33 +7,59 @@ open Browser
 open Fable.Core
 open Fable.Core.JS
 open Fable.Remoting.Client
+open Fable.Core.JS
+open System
 
 type State =
     | Active of Types.Update
     | Disconnected
 
-let watcherId = Guid.NewGuid().ToString()
-printfn "%A" watcherId
+let watcherId =
+    let watcherIdFromStorage = localStorage.getItem("watcherId")
+    if isNull watcherIdFromStorage then
+        let watcherId = Guid.NewGuid().ToString()
+        localStorage.setItem("watcherId", watcherId)
+        watcherId
+    else
+        watcherIdFromStorage
+
+printfn "Watcher ID: %A" watcherId
 
 let remoteApi =
     Remoting.createApi()
     |> Remoting.buildProxy<Types.RemoteApi>
+
+let createActionButton name action =
+    let ret = {|
+        Button = document.getElementById(sprintf "button-%s" name) :?> Types.HTMLButtonElement
+        Progress = document.getElementById(sprintf "progress-%s" name) :?> Types.HTMLProgressElement
+    |}
+    ret.Button.onclick <- fun _ ->
+        remoteApi.TakeAction(watcherId, action) |> Async.StartAsPromise
+    ret.Progress.max <- float action.ActionCost
+    ret
 
 let mutable lastTick: int64 = 0L
 let ageDiv = document.getElementById("age")
 let numPlantsDiv = document.getElementById("numPlants")
 let numWatchersDiv = document.getElementById("numWatchers")
 let gardenDiv = document.getElementById("garden")
+let buttonSow = createActionButton "sow" Types.SowSeeds
+let buttonFertilize = createActionButton "fertilize" Types.Fertilize
 let tooltipDiv = document.getElementById("tooltip")
 
 let updateState =
     fun newState ->
         match newState with
         | Active update ->
-            if update.Tick <= lastTick && not update.ForceReset then
+            if update.ForceReset then
+                window.location.reload()
+            elif update.Tick <= lastTick then
                 printfn "Received a stale update (current: %d, update: %d)" lastTick update.Tick
             else
                 lastTick <- update.Tick
+                gardenDiv.innerText <- update.Garden
+
                 ageDiv.innerText <- sprintf "Age: %d ticks" update.Tick
                 numPlantsDiv.innerText <- sprintf "Plants:\n%s" (
                     update.NumPlants
@@ -41,8 +67,12 @@ let updateState =
                     |> String.concat "\n"
                 )
                 numWatchersDiv.innerText <- sprintf "Watchers: %d" update.NumWatchers
-                gardenDiv.innerText <- update.Garden
-                printfn "Update: %A" (JSON.stringify(update.HoveredTileInfo))
+
+                buttonSow.Button.disabled <- update.GardenPoints < (int64 Types.SowSeeds.ActionCost)
+                buttonSow.Progress.value <- float update.GardenPoints
+
+                buttonFertilize.Button.disabled <- update.GardenPoints < (int64 Types.Fertilize.ActionCost)
+                buttonFertilize.Progress.value <- float update.GardenPoints
 
                 tooltipDiv.innerText <-
                     match update.HoveredTileInfo with

@@ -7,7 +7,13 @@ open Client.Types
 [<Literal>]
 let TickLengthMs = 125L
 
-let random = Random.Shared
+let private random = Random.Shared
+
+// You can only ever accumulate 3x the most expensive action in points.
+let private maxPoints =
+    [SowSeeds; Fertilize]
+    |> List.fold (fun cur action -> max cur (action.ActionCost * 3)) 0
+    |> int64
 
 // Hee hee
 type GardenState = {
@@ -16,6 +22,26 @@ type GardenState = {
     NumPlants : Map<PlantType, int>
     Garden : Lazy<string>
     NumWatchers : int
+}
+
+type Command =
+    | GetState of {|
+            HoveredTile : Option<int * int>
+            ReplyChannel : AsyncReplyChannel<GardenState * Option<HoveredTileInfo> * int64>
+        |}
+    | TakeAction of Client.Types.WatcherAction
+
+type ActorMessage = {
+    WatcherId : string
+    Command : Command
+}
+
+[<Struct>]
+type WatcherState = {
+    LastTick : int64
+
+    // Current tick - points base = points
+    PointsBase : int64
 }
 
 type Garden(width, height) =
@@ -47,29 +73,25 @@ type Garden(width, height) =
     let tileAt x y =
         garden.[y].[x]
 
-    let spawnPlants () =
-        let numPlants = int (float ((random.Next(15) + 5)  * width * height) / 100.0)
-        let rec placePlant plants =
-            if Map.count plants >= numPlants then
+    let spawnPlants makePlant numPlants (maxFailures : Option<int>) curTick plants =
+        let rec placePlant plants planted failed =
+            if planted >= numPlants || (maxFailures.IsSome && failed >= maxFailures.Value) then
                 plants
             else
                 let x = random.Next(width)
                 let y = random.Next(height)
                 let plantType = if random.NextDouble() < 0.75 then Flower else Pea
                 if (tileAt x y).CanGrowPlants() then
-                    let lastSeedAt = 0L - (int64 (random.NextInt64(plantType.SeedCooldown)))
                     placePlant
                         (Map.add
                             (struct (x, y))
-                            {
-                                Type = plantType
-                                PlantedAt = 0L
-                                Stage = Adult (struct {| LastSeedAt = lastSeedAt |})
-                            }
+                            (makePlant plantType curTick)
                             plants)
+                        (planted + 1)
+                        failed
                 else
-                    placePlant plants
-        placePlant Map.empty
+                    placePlant plants planted (failed + 1)
+        placePlant plants 0 0
 
     let displayGarden plants =
         let sb = Text.StringBuilder()
@@ -103,6 +125,28 @@ type Garden(width, height) =
                             let newNitrogen = max 0.0 (soil.Nitrogen - nitrogenUsage)
                             if newNitrogen <> soil.Nitrogen then
                                 garden.[y'].[x'] <- Soil {| soil with Nitrogen = newNitrogen |}
+
+    let sowSeeds curTick plants =
+        spawnPlants
+            (fun plantType curTick ->
+                {
+                    Type = plantType
+                    PlantedAt = curTick
+                    Stage = Seed
+                })
+            15
+            (Some 30)
+            curTick
+            plants
+
+    let fertilizeSoil () =
+        for y = 0 to height - 1 do
+            for x = 0 to width - 1 do
+                match tileAt x y with
+                | Soil s ->
+                    garden.[y].[x] <-
+                        Soil {| s with Nitrogen = s.Nitrogen + float Flower.MinNitrogen |}
+                | Stone -> ()
 
     let canGrow (plantType : PlantType) x y =
         match tileAt x y with
@@ -173,69 +217,108 @@ type Garden(width, height) =
         }
 
     let updateWatchers newState watchers watcherId =
-        let watchers = Map.add watcherId newState.Tick watchers
+        let watcherState =
+            match Map.tryFind watcherId watchers with
+            | None -> { LastTick = newState.Tick; PointsBase = newState.Tick }
+            | Some ws -> { ws with LastTick = newState.Tick }
+        let gardenPoints = newState.Tick - watcherState.PointsBase
+        let watchers = Map.add watcherId watcherState watchers
         let (struct (watchers, numWatchers)) =
-            Map.fold (fun (struct (watchers, numWatchers)) watcherId lastQueryTick ->
-                if newState.Tick - lastQueryTick > 15L then
+            Map.fold (fun (struct (watchers, numWatchers)) watcherId watcherState ->
+                if newState.Tick - watcherState.LastTick > 15L then
                     struct (Map.remove watcherId watchers, numWatchers)
                 else
                     struct (watchers, numWatchers + 1)
             ) (struct (watchers, 0)) watchers
         if numWatchers <> newState.NumWatchers then
-            struct ({ newState with NumWatchers = numWatchers }, watchers)
+            struct ({ newState with NumWatchers = numWatchers }, watchers, gardenPoints)
         else
-            struct (newState, watchers)
+            struct (newState, watchers, gardenPoints)
 
-    let mailbox =
-        MailboxProcessor<{|
-            WatcherId : string
-            HoveredTile : Option<int * int>
-            ReplyChannel : AsyncReplyChannel<GardenState * Option<HoveredTileInfo>>
-        |}>.Start(fun inbox ->
-            let creationStopwatch = Diagnostics.Stopwatch.StartNew()
-            let rec messageLoop baseTicks watchers cachedState =
-                async {
-                    let! message = inbox.Receive()
-                    let (watcherId, hoveredTile, replyChannel) =
-                        (message.WatcherId, message.HoveredTile, message.ReplyChannel)
-                    let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / TickLengthMs
-                    let lastTick = cachedState.Tick
-                    let (baseTicks, newState) =
-                        if ticks <> lastTick then
-                            let elapsedTicks = min 10L (ticks - lastTick)
-                            let baseTicks =
-                                if elapsedTicks <> ticks - lastTick then
-                                    creationStopwatch.Restart()
-                                    lastTick + elapsedTicks
-                                else baseTicks
-                            let rec advance state =
-                                if state.Tick = lastTick + elapsedTicks then
-                                    state
-                                else
-                                    advance ( state)
-                            (baseTicks, handleTick cachedState)
-                        else (baseTicks, cachedState)
-                    let struct (newState, watchers) = updateWatchers newState watchers watcherId
-                    let hoveredTileInfo =
-                        hoveredTile
-                        |> Option.map (fun (x, y) ->
-                            {
-                                Position = (x, y)
-                                Tile = tileAt x y
-                                Plant = Map.tryFind (struct (x, y)) newState.Plants
-                            })
-                    replyChannel.Reply((newState, hoveredTileInfo))
-                    return! messageLoop baseTicks watchers newState
-                }
-            let plants = spawnPlants ()
-            messageLoop 0L Map.empty {
-                Tick = 0L
-                Plants = plants
-                NumPlants = Map.empty
-                Garden = Lazy<string>.CreateFromValue("")
-                NumWatchers = 0
+    let mailbox = MailboxProcessor<ActorMessage>.Start(fun inbox ->
+        let creationStopwatch = Diagnostics.Stopwatch.StartNew()
+        let rec messageLoop baseTicks watchers cachedState = async {
+            let! message = inbox.Receive()
+            let watcherId = message.WatcherId
+            match message.Command with
+            | GetState gs ->
+                let (hoveredTile, replyChannel) = (gs.HoveredTile, gs.ReplyChannel)
+                let ticks = baseTicks + creationStopwatch.ElapsedMilliseconds / TickLengthMs
+                let lastTick = cachedState.Tick
+                let (baseTicks, newState) =
+                    if ticks <> lastTick then
+                        let elapsedTicks = min 10L (ticks - lastTick)
+                        let baseTicks =
+                            if elapsedTicks <> ticks - lastTick then
+                                creationStopwatch.Restart()
+                                lastTick + elapsedTicks
+                            else baseTicks
+                        let rec advance state =
+                            if state.Tick = lastTick + elapsedTicks then
+                                state
+                            else
+                                advance ( state)
+                        (baseTicks, handleTick cachedState)
+                    else (baseTicks, cachedState)
+                let struct (newState, watchers, gardenPoints) = updateWatchers newState watchers watcherId
+                let gardenPoints = min gardenPoints maxPoints
+                let hoveredTileInfo =
+                    hoveredTile
+                    |> Option.map (fun (x, y) ->
+                        let x = max (min (width - 1) x) 0
+                        let y = max (min (height - 1) y) 0
+                        {
+                            Position = (x, y)
+                            Tile = tileAt x y
+                            Plant = Map.tryFind (struct (x, y)) newState.Plants
+                        })
+                replyChannel.Reply((newState, hoveredTileInfo, gardenPoints))
+                return! messageLoop baseTicks watchers newState
+            | TakeAction a ->
+                let (watchers, newState) =
+                    match Map.tryFind message.WatcherId watchers with
+                    | Some ws when cachedState.Tick - ws.PointsBase >= a.ActionCost ->
+                        let newState =
+                            match a with
+                            | SowSeeds ->
+                                { cachedState with
+                                    Plants = sowSeeds cachedState.Tick cachedState.Plants
+                                }
+                            | Fertilize ->
+                                fertilizeSoil ()
+                                cachedState
+                        let watchers =
+                            Map.add
+                                message.WatcherId
+                                { ws with
+                                    PointsBase =
+                                        max
+                                            (ws.PointsBase + (int64 a.ActionCost))
+                                            (cachedState.Tick - maxPoints)
+                                }
+                                watchers
+                        (watchers, newState)
+                    | _ -> (watchers, cachedState)
+                return! messageLoop baseTicks watchers newState
+        }
+
+        let makePlant (plantType : PlantType) curTick =
+            let lastSeedAt = curTick - (int64 (random.NextInt64(plantType.SeedCooldown)))
+            {
+                Type = plantType
+                PlantedAt = curTick
+                Stage = Adult (struct {| LastSeedAt = lastSeedAt |})
             }
-        )
+        let numPlants = int (float ((random.Next(15) + 5)  * width * height) / 100.0)
+        let plants = spawnPlants makePlant numPlants None 0L Map.empty
+        messageLoop 0L Map.empty {
+            Tick = 0L
+            Plants = plants
+            NumPlants = Map.empty
+            Garden = Lazy<string>.CreateFromValue("")
+            NumWatchers = 0
+        }
+    )
 
     member __.Width with get () =
         width
@@ -244,5 +327,14 @@ type Garden(width, height) =
         height
 
     member __.GetState(watcherId, hoveredTile) =
-        Async.StartAsTask (mailbox.PostAndAsyncReply(fun channel ->
-            {| WatcherId = watcherId; HoveredTile = hoveredTile; ReplyChannel = channel |}))
+        mailbox.PostAndAsyncReply(fun channel ->
+            {
+                WatcherId = watcherId
+                Command = GetState {|
+                    HoveredTile = hoveredTile
+                    ReplyChannel = channel
+                |}
+            })
+
+    member __.TakeAction(watcherId, action) =
+        mailbox.Post({ WatcherId = watcherId; Command = TakeAction action })

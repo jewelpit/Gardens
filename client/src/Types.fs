@@ -82,16 +82,27 @@ type HoveredTileInfo = {
     Plant : Option<Plant>
 }
 
+type WatcherAction =
+    | SowSeeds
+    | Fertilize
+
+    member this.ActionCost with get () =
+        match this with
+        | SowSeeds -> 1_0
+        | Fertilize -> 3_5
+
 type Update = {
     Tick : int64
     NumPlants : Map<string, int>
     Garden : string
     NumWatchers : int
     HoveredTileInfo : Option<HoveredTileInfo>
+    GardenPoints : int64
     ForceReset : bool
 }
 
 type RemoteApi = {
     GetConfig : unit -> Async<Config>
     GetUpdate : (string * int64 * Option<(int * int)>) -> Async<Update>
+    TakeAction : (string * WatcherAction) -> Async<unit>
 }

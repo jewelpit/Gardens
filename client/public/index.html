@@ -24,8 +24,13 @@
       background: white;
     }
 
-    .flex {
+    .flex,
+    .flex-vert {
       display: flex;
+    }
+
+    .flex-vert {
+      flex-direction: column;
     }
 
     .spacer {
@@ -44,8 +49,16 @@
       margin: 0px;
     }
 
+    .left-margin {
+      margin-left: 1em;
+    }
+
     .narrow-fixed {
       width: 20em;
+    }
+
+    .width-80 {
+      width: 80%;
     }
   </style>
 </head>
@@ -56,12 +69,10 @@
 
     <div>
       <h1>ASCII Garden</h1>
-      <div class="flex">
-        <div class="bg-gray padded">
-          <pre id="garden" class="bg-white tiny-padded no-margin">LOADING...</pre>
-        </div>
+      <div class="flex bg-gray padded">
+        <pre id="garden" class="bg-white tiny-padded no-margin">LOADING...</pre>
 
-        <div class="narrow-fixed padded">
+        <div class="bg-white narrow-fixed flex-vert tiny-padded left-margin">
           <div id="age">
             LOADING...
           </div>
@@ -73,7 +84,23 @@
           <div id="numWatchers">
             LOADING...
           </div>
-          <div class="padded"></div>
+
+          <div class="tiny-padded"></div>
+          <div class="flex">
+            <div class="tiny-padded"></div>
+            <button id="button-sow" disabled>
+              Sow seeds
+              <progress id="progress-sow" class="width-80" value="0" max="100"></progress>
+            </button>
+            <div class="tiny-padded"></div>
+            <button id="button-fertilize" disabled>
+              Fertilize
+              <progress id="progress-fertilize" class="width-80" value="0" max="100"></progress>
+            </button>
+            <div class="tiny-padded"></div>
+          </div>
+
+          <div class="spacer"></div>
           <div id="tooltip"></div>
         </div>
       </div>

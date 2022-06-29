@@ -55,7 +55,7 @@ let webApp (garden : Model.Garden) =
 
     let getUpdate (watcherId, lastTick, hoveredTile) =
         async {
-            let! (state, hoveredTileInfo) = garden.GetState(watcherId, hoveredTile) |> Async.AwaitTask
+            let! (state, hoveredTileInfo, points) = garden.GetState(watcherId, hoveredTile)
 
             return {
                 Tick = state.Tick
@@ -66,9 +66,14 @@ let webApp (garden : Model.Garden) =
                 Garden = state.Garden.Value
                 NumWatchers = state.NumWatchers
                 HoveredTileInfo = hoveredTileInfo
+                GardenPoints = points
                 ForceReset = lastTick > state.Tick
             }
         }
+
+    let takeAction (watcherId, action) =
+        async { garden.TakeAction(watcherId, action) }
+
     choose [
         GET >=> choose [
             route "/" >=> htmlResource "client.public.index.html"
@@ -76,7 +81,7 @@ let webApp (garden : Model.Garden) =
         ]
         Remoting.createApi()
             |> Remoting.withErrorHandler (fun ex _ -> Propagate ex)
-            |> Remoting.fromValue { GetConfig = getConfig; GetUpdate = getUpdate }
+            |> Remoting.fromValue { GetConfig = getConfig; GetUpdate = getUpdate; TakeAction = takeAction }
             |> Remoting.buildHttpHandler
         setStatusCode 404 >=> text "Not Found"
     ]
