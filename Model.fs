@@ -227,6 +227,8 @@ type Garden(width, height) =
             Map.fold (fun (struct (watchers, numWatchers)) watcherId watcherState ->
                 if newState.Tick - watcherState.LastTick > 15L then
                     struct (Map.remove watcherId watchers, numWatchers)
+                elif watcherId = "" then
+                    struct (watchers, numWatchers)
                 else
                     struct (watchers, numWatchers + 1)
             ) (struct (watchers, 0)) watchers
@@ -320,13 +322,7 @@ type Garden(width, height) =
         }
     )
 
-    member __.Width with get () =
-        width
-
-    member __.Height with get () =
-        height
-
-    member __.GetState(watcherId, hoveredTile) =
+    let getState watcherId hoveredTile =
         mailbox.PostAndAsyncReply(fun channel ->
             {
                 WatcherId = watcherId
@@ -335,6 +331,25 @@ type Garden(width, height) =
                     ReplyChannel = channel
                 |}
             })
+
+    let idler =
+        let rec helper () = async {
+            if mailbox.CurrentQueueLength = 0 then
+                let! _ = getState "" None
+                ()
+            do! Async.Sleep (TimeSpan.FromSeconds(1))
+            return! helper ()
+        }
+        helper () |> Async.StartAsTask
+
+    member __.Width with get () =
+        width
+
+    member __.Height with get () =
+        height
+
+    member __.GetState(watcherId, hoveredTile) =
+        getState watcherId hoveredTile
 
     member __.TakeAction(watcherId, action) =
         mailbox.Post({ WatcherId = watcherId; Command = TakeAction action })
